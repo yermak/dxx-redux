@@ -90,6 +90,7 @@ COPYRIGHT 1993-1998 PARALLAX SOFTWARE CORPORATION.  ALL RIGHTS RESERVED.
 #include "vers_id.h"
 #include "event.h"
 #include "window.h"
+#include "dedicated.h"
 
 #ifdef OGL
 #include "ogl_init.h"
@@ -1115,7 +1116,8 @@ void GameProcessFrame(void)
 	int player_was_dead = Player_is_dead;
 
 	update_player_stats();
-	diminish_palette_towards_normal();		//	Should leave palette effect up for as long as possible by putting right before render.
+	if (!Dedicated_server)
+		diminish_palette_towards_normal();		//	Should leave palette effect up for as long as possible by putting right before render.
 	do_cloak_stuff();
 	do_invulnerable_stuff();
 	remove_obsolete_stuck_objects();

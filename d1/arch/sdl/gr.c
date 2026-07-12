@@ -230,6 +230,12 @@ void gr_palette_step_up( int r, int g, int b )
 	SDL_Palette *palette;
 	SDL_Color colors[256];
 
+	{
+		extern int Dedicated_server;
+		if (Dedicated_server)
+			return; /* headless: no video surface exists */
+	}
+
 	if ( (r==last_r) && (g==last_g) && (b==last_b) )
 		return;
 
@@ -282,6 +288,12 @@ void gr_palette_load( ubyte *pal )
 	SDL_Palette *palette;
 	SDL_Color colors[256];
 	ubyte gamma[64];
+
+	{
+		extern int Dedicated_server;
+		if (Dedicated_server)
+			return; /* headless: no video surface exists */
+	}
 
 	if (memcmp(pal,gr_current_pal,768))
 		SDL_FillRect(canvas, NULL, SDL_MapRGB(canvas->format, 0, 0, 0));

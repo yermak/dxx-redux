@@ -11,6 +11,7 @@ add_executable (d1x-redux
     controls.c
     credits.c
     custom.c
+    dedicated.c
     digiobj.c
     dumpmine.c
     effects.c

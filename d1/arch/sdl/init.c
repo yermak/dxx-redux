@@ -38,6 +38,14 @@ void arch_init(void)
 {
 	int t;
 
+	extern int Dedicated_server;
+	if (Dedicated_server)
+	{
+		if (SDL_Init(SDL_INIT_TIMER) < 0)
+			Error("SDL library initialisation failed: %s.", SDL_GetError());
+		return; /* headless: no video, no input devices, no sound */
+	}
+
 	if (SDL_Init(SDL_INIT_VIDEO) < 0)
 		Error("SDL library initialisation failed: %s.",SDL_GetError());
 

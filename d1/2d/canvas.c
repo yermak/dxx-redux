@@ -102,6 +102,12 @@ void gr_free_sub_canvas(grs_canvas *canv)
 
 void gr_set_current_canvas( grs_canvas *canv )
 {
+	{
+		extern int Dedicated_server;
+		if (Dedicated_server)
+			return; /* headless: no video surface exists */
+	}
+
 	if (canv==NULL)
 		grd_curcanv = &(grd_curscreen->sc_canvas);
 	else
@@ -110,6 +116,12 @@ void gr_set_current_canvas( grs_canvas *canv )
 
 void gr_clear_canvas(int color)
 {
+	{
+		extern int Dedicated_server;
+		if (Dedicated_server)
+			return; /* headless: no video surface exists */
+	}
+
 	gr_setcolor(color);
 	gr_rect(0,0,GWIDTH-1,GHEIGHT-1);
 }

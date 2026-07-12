@@ -983,6 +983,12 @@ static int old_b_r = 0, old_b_g = 0, old_b_b = 0;
 
 void gr_palette_step_up(int r, int g, int b)
 {
+	{
+		extern int Dedicated_server;
+		if (Dedicated_server)
+			return; /* headless: no video surface exists */
+	}
+
 	old_b_r = ogl_brightness_r;
 	old_b_g = ogl_brightness_g;
 	old_b_b = ogl_brightness_b;
@@ -1011,6 +1017,12 @@ static inline int min(int x, int y) { return x < y ? x : y; }
 void gr_palette_load( ubyte *pal )
 {
 	int i;
+
+	{
+		extern int Dedicated_server;
+		if (Dedicated_server)
+			return; /* headless: no video surface exists */
+	}
 
 	for (i=0; i<768; i++ )
 	{
