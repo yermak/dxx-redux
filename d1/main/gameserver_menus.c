@@ -246,14 +246,24 @@ int net_udp_gameserver_create(void)
 	gsp_create_state cs;
 	newmenu_item m[1];
 	struct _sockaddr zero_addr;
+	ubyte saved_refuse;
+	ubyte saved_flags;
 
-	/* server sessions are always open games */
+	/* Server sessions are always open games. Force the flags only for the
+	 * wire blob, then restore them: write_netgame_profile persists Netgame
+	 * on setup-menu exit, and the pilot's saved HOST GAME defaults must not
+	 * inherit values the create-mode UI never offered as a choice. The
+	 * dedicated child forces Open on its side regardless. */
+	saved_refuse = Netgame.RefusePlayers;
+	saved_flags = Netgame.game_flags;
 	Netgame.RefusePlayers = 0;
 	Netgame.game_flags &= ~NETGAME_FLAG_CLOSED;
 
 	memset(&zero_addr, 0, sizeof(zero_addr));
 	net_udp_update_netgame();
 	cs.blob_len = net_udp_pack_game_info(cs.blob, UPID_GAME_INFO, &zero_addr, 0);
+	Netgame.RefusePlayers = saved_refuse;
+	Netgame.game_flags = saved_flags;
 	cs.start_time = timer_query();
 	cs.last_send = 0;
 
