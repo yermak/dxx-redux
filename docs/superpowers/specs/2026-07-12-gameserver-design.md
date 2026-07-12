@@ -90,10 +90,13 @@ Alternatives rejected:
 
 ### 2. Engine `-dedicated` mode (in `d1x-redux`)
 
-Launch: `d1x-redux -dedicated <session-file> -port <N> -hogdir <dir> -nosound`.
-The session file (written by the broker to a temp dir) carries the packed
-`netgame_info` blob plus mission name and level number; the child deletes it after
-reading.
+Launch: `d1x-redux -dedicated <session-file> -hogdir <dir> -nosound -notitles`.
+The session file (written by the broker to a temp dir) is a small `key=value` text
+file (`port`, timeouts, optional `blob=<path>` pointing at the packed `netgame_info`
+bytes; without a blob, plain keys `game_name`/`mission`/`level`/`mode`/`maxplayers`
+configure a defaults game — used by the broker's `--test-create` smoke test and manual
+runs). The child deletes both files after reading. Dedicated children do not open the
+LAN-broadcast socket (the broker owns the default port on the server machine).
 
 - **No video**: skips window/renderer init entirely and runs its own main loop instead
   of the window-event pump: `calc_frame_time()` → `GameProcessFrame()` → net pump →
@@ -112,8 +115,11 @@ reading.
   - Join policy forced **Open**: `RefusePlayers` approval prompts and closed-game
     refusal paths never trigger.
   - **Level advance**: where host code today waits in the kmatrix score screen,
-    dedicated mode auto-advances after the score-display period (~15 s), cycling levels
-    in anarchy-type modes. Co-op mission completion ends the session gracefully.
+    dedicated mode auto-advances after the engine's existing score-display period
+    (`KMATRIX_VIEW_SEC`, 7 s — kept identical to what clients already use so both
+    sides stay in step), cycling levels in anarchy-type modes (the stock engine ends
+    the game at the last level; dedicated wraps to level 1). Co-op mission completion
+    ends the session gracefully.
   - Never pauses, ignores all input, records no demos. HUD messages buffer harmlessly
     (they are only drawn in the render frame, which never runs).
   - Self-termination: exits when no player has joined within 5 minutes of spawn, or
@@ -155,19 +161,22 @@ with the existing `PUT_INTEL_*`/`GET_INTEL_*` conventions.
 
 | Opcode | Direction | Payload |
 |---|---|---|
-| `GSP_CREATE_REQ` | client→broker | client `MULTI_PROTO_VERSION` (u16), mission name, level number, packed `netgame_info` blob (same packing as `net_udp_send_game_info()`); mission/level also appear as plain fields so the broker never parses the blob |
-| `GSP_CREATE_ACK` | broker→client | result code (OK / full / version mismatch / spawn failed / rate limited), game port on success |
+| `GSP_CREATE_REQ` | client→broker | client `MULTI_PROTO_VERSION` (u16, carried for future use), blob length (u16), packed `netgame_info` blob (same packing as `net_udp_send_game_info()`, `UPID_GAME_INFO` format) |
+| `GSP_CREATE_ACK` | broker→client | result code (OK / full / spawn failed / rate limited / bad request), game port on success |
 | `GSP_LIST_REQ` | client→broker | (header only) |
-| `GSP_LIST_ACK` | broker→client | count + per-session `{port, game name, mission name, mode, players, max players, level}` from cached polls |
+| `GSP_LIST_ACK` | broker→client | count + per-session `{port, game name, mission name, level, mode, players, max players, status}` from cached polls |
 
 The child unpacks the blob with existing deserialization code, then overrides
 host-specific fields: `host_is_obs`, addresses/tokens, forced-Open join policy, port.
+The broker parses nothing about the game — not even mission/level: a child that cannot
+load its mission exits before answering the readiness poll, which the broker reports as
+spawn failure.
 
-Version check: the broker compares the client's `MULTI_PROTO_VERSION` against the value
-it was compiled with (the constant is shared from the engine tree at build time — the
-broker links no engine code, it only needs the number). The child independently enforces
-protocol compatibility on join exactly as today, so the broker check is a fast-fail
-courtesy, not the security boundary.
+Version check (v1): the broker does not compare game-protocol versions. The creator
+auto-joins immediately after `GSP_CREATE_ACK`, and the existing join handshake performs
+the full version comparison and shows the standard mismatch message; a session created
+by an incompatible client simply times out empty. The child additionally validates that
+the blob was produced by the same engine version triple.
 
 Listing freshness: the broker polls each child with `UPID_GAME_INFO_REQ` (lite) every
 ~5 s and answers `GSP_LIST_REQ` from that cache.
@@ -205,8 +214,9 @@ Abuse limiting in v1: global session cap (default 8) + per-IP create rate limit
 
 - **`d1/Dockerfile`** (multi-stage):
   - Build stage: gcc/cmake/ninja + SDL 1.2 + PhysFS dev packages; configure
-    `-DOPENGL=OFF -DSDLMIXER=OFF` (server never renders; software build keeps the
-    runtime image free of GL/audio deps).
+    `-DOPENGL=OFF -DOPENGLMERGE=OFF -DSDLMIXER=OFF -DPNG=OFF -DTRACKER=OFF` (server
+    never renders; the software build keeps the runtime image free of GL/audio/png
+    deps, and tracker code is client-side anyway).
   - Runtime stage: slim base with `d1x-gameserver`, `d1x-redux`, and runtime libs.
   - `EXPOSE 42424/udp 42425-42440/udp`; knobs via env; entrypoint `d1x-gameserver`.
 - **Game data is never baked into the image** (copyright): `descent.hog`/`descent.pig`
