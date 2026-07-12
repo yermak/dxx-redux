@@ -2870,30 +2870,19 @@ int net_udp_check_game_info_request(ubyte *data, int lite)
 
 extern fix ThisLevelTime;
 
-void net_udp_send_game_info(struct _sockaddr sender_addr, ubyte info_upid, ubyte send_to_observers, uint player_token)
+// Serialize current Netgame into buf in the exact wire format of info_upid
+// (UPID_GAME_INFO_LITE, UPID_GAME_INFO or UPID_SYNC). Returns byte length.
+// sender_addr is used only to set the per-player isyou byte; player_token
+// only for UPID_SYNC. Caller must provide UPID_GAME_INFO_SIZE bytes.
+int net_udp_pack_game_info(ubyte *buf, ubyte info_upid, struct _sockaddr *sender_addr, uint player_token)
 {
-	//static fix64 last_full_req_time = 0;
-	//if (timer_query() < last_full_req_time+(F1_0/5)) // answer 5 times per second max
-	//	break;
-	//last_full_req_time = timer_query();
-
-	//static fix64 last_lite_req_time = 0;
-	//if (timer_query() < last_lite_req_time+(F1_0/8))// answer 8 times per second max
-	//	break;
-	//last_lite_req_time = timer_query();	
-
-	// Send game info to someone who requested it
-
 	int len = 0;
-	
-	net_udp_update_netgame(); // Update the values in the netgame struct
-	
+
 	if (info_upid == UPID_GAME_INFO_LITE)
 	{
-		ubyte buf[UPID_GAME_INFO_LITE_SIZE];
 		int tmpvar = 0;
 
-		memset(buf, 0, sizeof(buf));
+		memset(buf, 0, UPID_GAME_INFO_LITE_SIZE);
 		
 		buf[0] = info_upid;								len++;
 		PUT_INTEL_SHORT(buf + len, DXX_VERSION_MAJORi); 						len += 2;
@@ -2921,15 +2910,12 @@ void net_udp_send_game_info(struct _sockaddr sender_addr, ubyte info_upid, ubyte
 		buf[len] = Netgame.numconnected;						len++;
 		buf[len] = Netgame.max_numplayers;						len++;
 		buf[len] = Netgame.game_flags;							len++;
-		
-		dxx_sendto (UDP_Socket[0], buf, len, 0, (struct sockaddr *)&sender_addr, sizeof(struct _sockaddr));
 	}
 	else
 	{
-		ubyte buf[UPID_GAME_INFO_SIZE];
 		int i = 0, j = 0, tmpvar = 0;
-		
-		memset(buf, 0, sizeof(buf));
+
+		memset(buf, 0, UPID_GAME_INFO_SIZE);
 
 		buf[0] = info_upid;								len++;
 		PUT_INTEL_SHORT(buf + len, DXX_VERSION_MAJORi); 						len += 2;
@@ -2943,7 +2929,7 @@ void net_udp_send_game_info(struct _sockaddr sender_addr, ubyte info_upid, ubyte
 			buf[len] = Netgame.players[i].rank;					len++;
 			buf[len] = Netgame.players[i].color;				len++; 
 			buf[len] = Netgame.players[i].missilecolor;				len++;
-			if (!memcmp((struct _sockaddr *)&sender_addr, (struct _sockaddr *)&Netgame.players[i].protocol.udp.addr, sizeof(struct _sockaddr))) {
+			if (!memcmp((struct _sockaddr *)sender_addr, (struct _sockaddr *)&Netgame.players[i].protocol.udp.addr, sizeof(struct _sockaddr))) {
 				buf[len] = 1; len++; 
 			} else {
 				buf[len] = 0;							len++;
@@ -3058,14 +3044,30 @@ void net_udp_send_game_info(struct _sockaddr sender_addr, ubyte info_upid, ubyte
 			PUT_INTEL_INT(buf + len, netgame_token); len += 4; 
 		}
 
-		Assert(len <= sizeof(buf));
-
-		if (send_to_observers != 2)
-			dxx_sendto (UDP_Socket[0], buf, len, 0, (struct sockaddr *)&sender_addr, sizeof(struct _sockaddr));
-
-		if (send_to_observers != 0)
-			forward_to_observers(buf, len, 0);
+		Assert(len <= UPID_GAME_INFO_SIZE);
 	}
+
+	return len;
+}
+
+void net_udp_send_game_info(struct _sockaddr sender_addr, ubyte info_upid, ubyte send_to_observers, uint player_token)
+{
+	ubyte buf[UPID_GAME_INFO_SIZE];
+	int len;
+
+	net_udp_update_netgame(); // Update the values in the netgame struct
+	len = net_udp_pack_game_info(buf, info_upid, &sender_addr, player_token);
+
+	if (info_upid == UPID_GAME_INFO_LITE)
+	{
+		dxx_sendto (UDP_Socket[0], buf, len, 0, (struct sockaddr *)&sender_addr, sizeof(struct _sockaddr));
+		return;
+	}
+
+	if (send_to_observers != 2)
+		dxx_sendto (UDP_Socket[0], buf, len, 0, (struct sockaddr *)&sender_addr, sizeof(struct _sockaddr));
+	if (send_to_observers != 0)
+		forward_to_observers(buf, len, 0);
 }
 
 static void net_udp_broadcast_game_info(ubyte info_upid)
