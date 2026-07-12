@@ -55,6 +55,23 @@
 #include "vers_id.h"
 #include "dedicated.h"
 
+#include "gsp.h"
+#include "gameserver_menus.h"   /* mailbox types + externs for the Game Server client UI */
+
+/* compile-time sync between standalone gsp.h and engine headers */
+#if GSP_GAME_NAME_LEN != (NETGAME_NAME_LEN+1)
+#error gsp.h GSP_GAME_NAME_LEN out of sync with NETGAME_NAME_LEN
+#endif
+#if GSP_MISSION_NAME_LEN != 9
+#error gsp.h GSP_MISSION_NAME_LEN out of sync
+#endif
+#if GSP_UPID_LITE_REQ != UPID_GAME_INFO_LITE_REQ || GSP_UPID_LITE != UPID_GAME_INFO_LITE
+#error gsp.h UPID mirror out of sync
+#endif
+#if GSP_UPID_LITE_REQ_SIZE != UPID_GAME_INFO_LITE_REQ_SIZE
+#error gsp.h UPID_GAME_INFO_LITE_REQ_SIZE mirror out of sync
+#endif
+
 #ifdef _WIN32
 #include <Windows.h>
 #include <wincrypt.h>
@@ -95,15 +112,12 @@ int gettimeofday(struct timeval* tv, void* tz)
 #endif //  defined(_WIN32) || defined(macintosh)
 
 // Prototypes
-void net_udp_init();
 void net_udp_close();
 void net_udp_request_game_info(struct _sockaddr game_addr, int lite);
-void net_udp_listen();
 int net_udp_show_game_info();
 int net_udp_do_join_game(ubyte join_as_obs);
 int net_udp_can_join_netgame(netgame_info *game, ubyte join_as_obs);
 void net_udp_flush();
-void net_udp_update_netgame(void);
 void net_udp_send_objects(void);
 void net_udp_send_rejoin_sync(int player_num);
 void net_udp_send_game_info(struct _sockaddr sender_addr, ubyte info_upid, ubyte send_to_observers, uint player_token);
@@ -155,8 +169,6 @@ void add_message_to_obs_buffer(ubyte *data, int data_len, int needack);
 void check_obs_buffer(fix64 now);
 void forward_to_observers_nodelay(ubyte *data, int data_len, int needack);
 void net_udp_process_obs_quit(ubyte *data, int data_len, struct _sockaddr sender_addr);
-
-void net_udp_reset_connection_statuses(); 
 
 static void net_udp_broadcast_game_info(ubyte info_upid);
 
@@ -375,6 +387,14 @@ ssize_t dxx_sendto(int sockfd, const void *msg, int len, unsigned int flags, con
 		UDP_len_sendto += rv;
 
 	return rv;
+}
+
+// Thin wrapper so GSP (Game Server Protocol) code in gameserver_menus.c can
+// send on the client's primary UDP socket without needing static UDP_Socket[]
+// (or dxx_sendto's ssize_t/socklen_t signature) visible outside this file.
+int net_udp_gsp_sendto(const ubyte *buf, int len, struct _sockaddr *to)
+{
+	return (int)dxx_sendto(UDP_Socket[0], buf, len, 0, (struct sockaddr *)to, sizeof(struct _sockaddr));
 }
 
 ssize_t dxx_recvfrom(int sockfd, void *buf, int len, unsigned int flags, struct sockaddr *from, socklen_t *fromlen)
@@ -781,16 +801,7 @@ int udp_tracker_process_game( ubyte *data, int data_len )
 }
 #endif /* USE_TRACKER */
 
-typedef struct direct_join
-{
-	struct _sockaddr host_addr;
-	int connecting;
-	fix64 start_time, last_time;
-	char addrbuf[128];
-	char portbuf[6];
-	ubyte join_as_obs;
-} direct_join;
-
+// direct_join now lives in net_udp.h so gameserver_menus.c can use it too.
 
 int generate_token() {
 #ifdef _WIN32
@@ -3560,7 +3571,40 @@ void net_udp_process_packet(ubyte *data, struct _sockaddr sender_addr, int lengt
 
 		case UPID_REATTEMPT_DIRECT:
 			net_udp_process_p2p_reattempt_direct( data, sender_addr, length);
-			break; 
+			break;
+
+		case GSP_CREATE_ACK:
+			if (GSP_awaiting == 1 && length >= 5) {
+				GSP_create_result.result = data[2];
+				GSP_create_result.port = GET_INTEL_SHORT(&data[3]);
+				GSP_create_result.valid = 1;
+			}
+			break;
+		case GSP_LIST_ACK:
+			if (GSP_awaiting == 2 && length >= 3) {
+				int i, off = 3;
+				int count = data[2];
+				if (count > GSP_MAX_SESSIONS_CAP)
+					count = GSP_MAX_SESSIONS_CAP;
+				if (length < 3 + count * GSP_LIST_ENTRY_SIZE)
+					break;
+				for (i = 0; i < count; i++) {
+					gsp_list_entry *e = &GSP_list_result.entries[i];
+					e->port = GET_INTEL_SHORT(&data[off]); off += 2;
+					memcpy(e->game_name, &data[off], GSP_GAME_NAME_LEN); off += GSP_GAME_NAME_LEN;
+					e->game_name[GSP_GAME_NAME_LEN-1] = 0;
+					memcpy(e->mission_name, &data[off], GSP_MISSION_NAME_LEN); off += GSP_MISSION_NAME_LEN;
+					e->mission_name[GSP_MISSION_NAME_LEN-1] = 0;
+					e->levelnum = GET_INTEL_INT(&data[off]); off += 4;
+					e->gamemode = data[off++];
+					e->numconnected = data[off++];
+					e->max_numplayers = data[off++];
+					e->game_status = data[off++];
+				}
+				GSP_list_result.count = count;
+				GSP_list_result.valid = 1;
+			}
+			break;
 
 		default:
 			con_printf(CON_DEBUG, "unknown packet type received - type %i\n", data[0]);
@@ -4165,9 +4209,12 @@ int net_udp_game_param_handler( newmenu *menu, d_event *event, param_opt *opt )
 		case EVENT_NEWMENU_CHANGED:
 			if (citem == opt->team_anarchy)
 			{
-				menus[opt->closed].value = 1;
-				menus[opt->closed-1].value = 0;
-				menus[opt->closed+1].value = 0;
+				if (opt->closed >= 0)
+				{
+					menus[opt->closed].value = 1;
+					menus[opt->closed-1].value = 0;
+					menus[opt->closed+1].value = 0;
+				}
 			}
 			
 			if (menus[opt->coop].value)
@@ -4282,11 +4329,15 @@ int net_udp_game_param_handler( newmenu *menu, d_event *event, param_opt *opt )
 				else Int3(); // Invalid mode -- see Rob
 			}
 
-			if (menus[opt->closed].value)
-				Netgame.game_flags |= NETGAME_FLAG_CLOSED;
-			else
-				Netgame.game_flags &= ~NETGAME_FLAG_CLOSED;
-			Netgame.RefusePlayers=menus[opt->refuse].value;
+			if (opt->closed >= 0)
+			{
+				if (menus[opt->closed].value)
+					Netgame.game_flags |= NETGAME_FLAG_CLOSED;
+				else
+					Netgame.game_flags &= ~NETGAME_FLAG_CLOSED;
+			}
+			if (opt->refuse >= 0)
+				Netgame.RefusePlayers=menus[opt->refuse].value;
 			Netgame.obs_delay = menus[opt->obsdelay].value;
 			Netgame.obs_min = menus[opt->obsmin].value;
 			break;
@@ -4310,7 +4361,11 @@ int net_udp_game_param_handler( newmenu *menu, d_event *event, param_opt *opt )
 			}
 
 			if (citem==opt->start_game)
+			{
+				if (Gameserver_create_mode)
+					return !net_udp_gameserver_create();
 				return !net_udp_start_game();
+			}
 
 			if (citem==opt->load_preset) {
 				load_preset(menu);
@@ -4560,11 +4615,23 @@ int net_udp_setup_game()
 
 		m[optnum].type = NM_TYPE_TEXT; m[optnum].text = ""; optnum++;
 
-		m[optnum].type = NM_TYPE_RADIO; m[optnum].text = "Open game"; m[optnum].group=1; m[optnum].value=(!Netgame.RefusePlayers && !Netgame.game_flags & NETGAME_FLAG_CLOSED); optnum++;
-		opt.closed = optnum;
-		m[optnum].type = NM_TYPE_RADIO; m[optnum].text = TXT_CLOSED_GAME; m[optnum].group=1; m[optnum].value=Netgame.game_flags & NETGAME_FLAG_CLOSED; optnum++;
-		opt.refuse = optnum;
-		m[optnum].type = NM_TYPE_RADIO; m[optnum].text = "Restricted Game              "; m[optnum].group=1; m[optnum].value=Netgame.RefusePlayers; optnum++;
+		if (Gameserver_create_mode)
+		{
+			// Sessions spawned on a Game Server broker are always open games:
+			// there is no host to run "Restricted"'s manual accept/deny UI,
+			// and "Closed" would make the session unjoinable to everyone.
+			m[optnum].type = NM_TYPE_RADIO; m[optnum].text = "Open game"; m[optnum].group=1; m[optnum].value=1; optnum++;
+			opt.closed = -1;
+			opt.refuse = -1;
+		}
+		else
+		{
+			m[optnum].type = NM_TYPE_RADIO; m[optnum].text = "Open game"; m[optnum].group=1; m[optnum].value=(!Netgame.RefusePlayers && !Netgame.game_flags & NETGAME_FLAG_CLOSED); optnum++;
+			opt.closed = optnum;
+			m[optnum].type = NM_TYPE_RADIO; m[optnum].text = TXT_CLOSED_GAME; m[optnum].group=1; m[optnum].value=Netgame.game_flags & NETGAME_FLAG_CLOSED; optnum++;
+			opt.refuse = optnum;
+			m[optnum].type = NM_TYPE_RADIO; m[optnum].text = "Restricted Game              "; m[optnum].group=1; m[optnum].value=Netgame.RefusePlayers; optnum++;
+		}
 
 		numplayers_limit = Netgame.gamemode == NETGAME_COOPERATIVE ? 4 : Netgame.max_numobservers ? 7 : 8;
 		if (Netgame.max_numplayers > numplayers_limit)
