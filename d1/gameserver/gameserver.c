@@ -265,6 +265,8 @@ static void handle_list(struct sockaddr_in *from, const unsigned char *data, int
 static void handle_lite_info(struct sockaddr_in *from, const unsigned char *data, int len)
 {
 	session *s;
+	if (from->sin_addr.s_addr != inet_addr("127.0.0.1"))
+		return;
 	if (len < GSP_LITE_SIZE)
 		return;
 	s = find_by_port(ntohs(from->sin_port));
@@ -338,6 +340,10 @@ int main(int argc, char **argv)
 	struct sockaddr_in bindaddr;
 	fd_set rfds;
 	struct timeval tv;
+
+	setvbuf(stdout, NULL, _IONBF, 0); /* docker logs reads a pipe; don't sit on log lines
+	                                     (_IONBF, not _IOLBF: Windows CRT degrades _IOLBF
+	                                     to full buffering; output volume is tiny) */
 
 	Cfg_port = atoi(arg_or_env(argc, argv, "--port", "GS_PORT", "42424"));
 	Cfg_game_port_base = atoi(arg_or_env(argc, argv, "--game-port-base", "GS_GAME_PORT_BASE", "42425"));
@@ -437,8 +443,11 @@ int main(int argc, char **argv)
 	{
 		int i;
 		for (i = 0; i < Cfg_max_sessions; i++)
+			if (Sessions[i].state != SLOT_FREE && gs_proc_running(&Sessions[i].proc))
+				gs_proc_kill(&Sessions[i].proc);
+		for (i = 0; i < Cfg_max_sessions; i++)
 			if (Sessions[i].state != SLOT_FREE)
-				free_session(&Sessions[i], 1);
+				free_session(&Sessions[i], 0);
 	}
 	close_socket(Sock);
 #ifdef _WIN32

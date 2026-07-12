@@ -7,7 +7,7 @@ typedef struct gs_proc {
 	void *handle;               /* HANDLE, NULL when slot free */
 	unsigned long pid;
 #else
-	int pid;                    /* 0 when slot free */
+	int pid;                    /* >0 running, 0 free, <0 exited+reaped (awaiting gs_proc_close) */
 #endif
 } gs_proc;
 
