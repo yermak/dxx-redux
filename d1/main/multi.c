@@ -63,6 +63,7 @@ COPYRIGHT 1993-1998 PARALLAX SOFTWARE CORPORATION.  ALL RIGHTS RESERVED.
 #include "net_udp.h"
 #endif
 #include "args.h"
+#include "dedicated.h"
 
 //
 // Local macros and prototypes
@@ -786,7 +787,10 @@ void multi_endlevel_score(void)
 	Network_status = NETSTAT_ENDLEVEL;
 #endif
 
-	kmatrix_view(Game_mode & GM_NETWORK);
+	if (Dedicated_server)
+		dedicated_endlevel_wait();
+	else
+		kmatrix_view(Game_mode & GM_NETWORK);
 
 	// Restore connect state
 	if (Game_mode & GM_NETWORK)
@@ -2349,7 +2353,7 @@ multi_do_player_explode(const ubyte *buf)
 
 void multi_obs_check_all_escaped()
 {
-	for (int i = 0; i < MAX_PLAYERS; i++)
+	for (int i = (Netgame.host_is_obs ? 1 : 0); i < MAX_PLAYERS; i++)
 	{
 		if (Players[i].connected == CONNECT_PLAYING)
 			return;

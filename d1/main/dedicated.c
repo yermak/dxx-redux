@@ -18,6 +18,8 @@
 #include "player.h"
 #include "game.h"
 #include "inferno.h"
+#include "kmatrix.h"
+#include "cntrlcen.h"
 
 int Dedicated_server = 0;
 int Dedicated_exit_requested = 0;
@@ -87,9 +89,76 @@ int dedicated_connected_players(void)
 	return n + Netgame.numobservers;
 }
 
+/* Headless stand-in for the kmatrix window: keep the netcode pumped while
+ * clients sit on their score screens, wait until no real player is still
+ * CONNECT_PLAYING, then hold the score-view delay so clients can read it. */
+void dedicated_endlevel_wait(void)
+{
+	fix64 end_time = -1;
+	int i, playing;
+
+	con_printf(CON_NORMAL, "[dedicated] level ended, waiting for players + %ds score view\n", KMATRIX_VIEW_SEC);
+
+	for (;;) {
+		timer_update();
+		timer_delay2(20);
+		multi_do_protocol_frame(0, 1);
+
+		playing = 0;
+		for (i = (Netgame.host_is_obs ? 1 : 0); i < MAX_PLAYERS; i++) {
+			if (Netgame.max_numobservers > 0 && i == OBSERVER_PLAYER_ID)
+				continue;
+			if (Players[i].connected && Players[i].connected != CONNECT_END_MENU
+			    && Players[i].connected != CONNECT_DIED_IN_MINE)
+				playing = 1;
+		}
+		if (!playing)
+			Countdown_seconds_left = -1;
+		if (end_time == -1 && Countdown_seconds_left < 0 && !playing)
+			end_time = timer_query() + (KMATRIX_VIEW_SEC * F1_0);
+		if (end_time != -1 && timer_query() >= end_time) {
+			multi_send_endlevel_packet();
+			Netgame.numobservers = 0;
+			return;
+		}
+	}
+}
+
+static fix64 Ded_empty_since;   /* 0 = not currently empty */
+static int Ded_ever_had_player;
+
+/* called once per dedicated frame */
 int dedicated_should_exit(void)
 {
-	return Dedicated_exit_requested; /* lifecycle timers arrive in Task 4 */
+	int players = dedicated_connected_players();
+	fix64 now = timer_query();
+
+	if (Dedicated_exit_requested)
+		return 1;
+	if (players > 0) {
+		if (!Ded_ever_had_player)
+			con_printf(CON_NORMAL, "[dedicated] first player joined\n");
+		Ded_ever_had_player = 1;
+		Ded_empty_since = 0;
+		return 0;
+	}
+	if (!Ded_ever_had_player) {
+		if (now > Ded_started_at + i2f(Dedicated_cfg.timeout_empty_start)) {
+			con_printf(CON_NORMAL, "[dedicated] nobody joined within %ds, closing\n", Dedicated_cfg.timeout_empty_start);
+			return 1;
+		}
+		return 0;
+	}
+	if (!Ded_empty_since) {
+		Ded_empty_since = now;
+		con_printf(CON_NORMAL, "[dedicated] empty, closing in %ds unless someone joins\n", Dedicated_cfg.timeout_empty);
+		return 0;
+	}
+	if (now > Ded_empty_since + i2f(Dedicated_cfg.timeout_empty)) {
+		con_printf(CON_NORMAL, "[dedicated] still empty, closing session\n");
+		return 1;
+	}
+	return 0;
 }
 
 void dedicated_main(void)
