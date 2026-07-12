@@ -130,7 +130,8 @@ reading.
 ### 3. Client additions (in `d1x-redux`)
 
 - Multiplayer menu gains **"GAME SERVER"** with: `[Server address]` (persisted in the
-  global config, last-used remembered), `[Browse games]`, `[Create game]`.
+  machine-level config via `main/config.c` (`GameCfg`), not per-pilot; last-used
+  remembered), `[Browse games]`, `[Create game]`.
 - **Browse**: `GSP_LIST_REQ` → list of sessions (name, mode, mission, players, level) →
   selecting one joins via the existing direct-join flow to `server_ip:port`, preserving
   the current join-as-player / join-as-observer choice.
@@ -161,6 +162,15 @@ with the existing `PUT_INTEL_*`/`GET_INTEL_*` conventions.
 
 The child unpacks the blob with existing deserialization code, then overrides
 host-specific fields: `host_is_obs`, addresses/tokens, forced-Open join policy, port.
+
+Version check: the broker compares the client's `MULTI_PROTO_VERSION` against the value
+it was compiled with (the constant is shared from the engine tree at build time — the
+broker links no engine code, it only needs the number). The child independently enforces
+protocol compatibility on join exactly as today, so the broker check is a fast-fail
+courtesy, not the security boundary.
+
+Listing freshness: the broker polls each child with `UPID_GAME_INFO_REQ` (lite) every
+~5 s and answers `GSP_LIST_REQ` from that cache.
 
 Create flow: broker validates version + capacity → spawns child → polls the child's
 game port with `UPID_GAME_INFO_REQ` until it answers (ready) or exits/times out (~10 s)
