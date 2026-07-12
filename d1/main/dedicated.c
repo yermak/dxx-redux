@@ -10,6 +10,14 @@
 #include "console.h"
 #include "maths.h"
 #include "timer.h"
+#include "args.h"
+#include "playsave.h"
+#include "config.h"
+#include "multi.h"
+#include "net_udp.h"
+#include "player.h"
+#include "game.h"
+#include "inferno.h"
 
 int Dedicated_server = 0;
 int Dedicated_exit_requested = 0;
@@ -68,9 +76,15 @@ int dedicated_parse_cfg(const char *path)
 	return 1;
 }
 
+fix64 Ded_started_at; /* lifecycle timers build on this in Task 4 */
+
 int dedicated_connected_players(void)
 {
-	return 0; /* real body (players + observers) arrives in Task 3 */
+	int i, n = 0;
+	for (i = (Netgame.host_is_obs ? 1 : 0); i < N_players; i++)
+		if (Players[i].connected)
+			n++;
+	return n + Netgame.numobservers;
 }
 
 int dedicated_should_exit(void)
@@ -82,9 +96,35 @@ void dedicated_main(void)
 {
 	signal(SIGINT, ded_signal);
 	signal(SIGTERM, ded_signal);
-	con_printf(CON_NORMAL, "[dedicated] session: port=%d game='%s' mission='%s' level=%d mode=%d blob='%s'\n",
-	           Dedicated_cfg.port, Dedicated_cfg.game_name, Dedicated_cfg.mission,
-	           Dedicated_cfg.level, Dedicated_cfg.mode, Dedicated_cfg.blob_path);
-	con_printf(CON_NORMAL, "[dedicated] boot OK (hosting arrives in the next task)\n");
+
+	con_printf(CON_NORMAL, "[dedicated] starting session '%s' on UDP port %d\n",
+	           Dedicated_cfg.game_name, Dedicated_cfg.port);
+
+	strcpy(Players[0].callsign, "SERVER");
+	new_player_config();                 /* sane PlayerCfg defaults */
+	if (PlayerCfg.maxFps > 60 || PlayerCfg.maxFps < 10)
+		PlayerCfg.maxFps = 60;           /* server sim rate; packets max 40/s */
+	GameCfg.VSync = 0;                   /* enables calc_frame_time's sleep */
+
+	if (!net_udp_dedicated_start_game())
+		exit(1);
+
+	con_printf(CON_NORMAL, "[dedicated] hosting '%s' (%s, level %d, mode %d), waiting for players\n",
+	           Netgame.game_name, Netgame.mission_title, Netgame.levelnum, Netgame.gamemode);
+
+	Ded_started_at = timer_query();
+	calc_frame_time();                   /* prime FrameTime; first delta is garbage */
+
+	while (!dedicated_should_exit())
+	{
+		calc_frame_time();               /* includes the maxFps sleep (game.c:381) */
+		calc_game_time();
+		GameProcessFrame();              /* simulation + multi_do_frame -> net_udp_do_frame(0,1) */
+	}
+
+	con_printf(CON_NORMAL, "[dedicated] closing session\n");
+	if (dedicated_connected_players() > 0)
+		multi_leave_game();              /* tells clients the game ended */
+	net_udp_close();
 	exit(0);
 }

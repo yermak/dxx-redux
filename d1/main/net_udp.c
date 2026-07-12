@@ -53,6 +53,7 @@
 #include "byteswap.h"
 #include "config.h"
 #include "vers_id.h"
+#include "dedicated.h"
 
 #ifdef _WIN32
 #include <Windows.h>
@@ -4687,7 +4688,12 @@ void net_udp_read_sync_packet( ubyte * data, int data_len, struct _sockaddr send
 	{
 		Network_status = NETSTAT_MENU;
 		if (prev_status != NETSTAT_MENU)
-			nm_messagebox(TXT_ERROR, 1, TXT_OK, TXT_NETLEVEL_NMATCH);
+		{
+			if (Dedicated_server)
+				con_printf(CON_URGENT, "[dedicated] segment checksum mismatch (level data out of sync)\n");
+			else
+				nm_messagebox(TXT_ERROR, 1, TXT_OK, TXT_NETLEVEL_NMATCH);
+		}
 #ifdef NDEBUG
 		return;
 #endif
@@ -4804,7 +4810,13 @@ int net_udp_send_sync(void)
 	// Check if there are enough starting positions
 	if (NumNetPlayerPositions < Netgame.max_numplayers)
 	{
-		nm_messagebox(TXT_ERROR, 1, TXT_OK, "Not enough start positions\n(set %d got %d)\nNetgame aborted", Netgame.max_numplayers, NumNetPlayerPositions);
+		if (Dedicated_server)
+		{
+			con_printf(CON_URGENT, "[dedicated] level has %d start positions, need %d — aborting session\n", NumNetPlayerPositions, Netgame.max_numplayers);
+			Dedicated_exit_requested = 1;
+		}
+		else
+			nm_messagebox(TXT_ERROR, 1, TXT_OK, "Not enough start positions\n(set %d got %d)\nNetgame aborted", Netgame.max_numplayers, NumNetPlayerPositions);
 		// Tell everyone we're bailing
 		Netgame.numplayers = 0;
 		for (i=1; i<N_players; i++)
@@ -5222,6 +5234,130 @@ int net_udp_start_game(void)
 	return 1;	// don't keep params menu or mission listbox (may want to join a game next time)
 }
 
+// Menu-less host start for dedicated mode. Replicates the state set by
+// net_udp_setup_game (params menu), net_udp_start_game and the
+// unchecked-host path of net_udp_select_players (net_udp.c:5145-5150),
+// with zero players and the host as pure observer. Returns 1 on success.
+int net_udp_dedicated_start_game(void)
+{
+	// The interactive path sets this in menu.c (MENU_START_UDP_NETGAME) before
+	// ever reaching net_udp_setup_game; dedicated mode has no menu, so set it
+	// here -- multi_level_sync() and friends switch on it and Error() out
+	// with "Protocol handling missing" if it is left at its 0 default.
+	multi_protocol = MULTI_PROTO_UDP;
+
+	net_udp_init(); // WSAStartup, memset(Netgame), UDP_Seq from Players[0].callsign, multi_new_game(), tokens
+
+	if (Dedicated_cfg.blob_path[0])
+	{
+		// creator-supplied config: a UPID_GAME_INFO-format packet
+		FILE *bf = fopen(Dedicated_cfg.blob_path, "rb");
+		ubyte blob[UPID_GAME_INFO_SIZE];
+		int blen;
+		struct _sockaddr zero_addr;
+
+		if (!bf) {
+			con_printf(CON_URGENT, "[dedicated] cannot open blob %s\n", Dedicated_cfg.blob_path);
+			return 0;
+		}
+		blen = (int)fread(blob, 1, sizeof(blob), bf);
+		fclose(bf);
+		remove(Dedicated_cfg.blob_path);
+		if (blen < 32 || blob[0] != UPID_GAME_INFO) {
+			con_printf(CON_URGENT, "[dedicated] malformed session blob\n");
+			return 0;
+		}
+		memset(&zero_addr, 0, sizeof(zero_addr));
+		if (!net_udp_process_game_info(blob, blen, zero_addr, 0, 0)) {
+			con_printf(CON_URGENT, "[dedicated] session blob rejected\n");
+			return 0;
+		}
+		if (Netgame.protocol.udp.program_iver[0] != DXX_VERSION_MAJORi ||
+		    Netgame.protocol.udp.program_iver[1] != DXX_VERSION_MINORi ||
+		    Netgame.protocol.udp.program_iver[2] != DXX_VERSION_MICROi) {
+			con_printf(CON_URGENT, "[dedicated] creator game version mismatch\n");
+			return 0;
+		}
+	}
+	else
+	{
+		netgame_set_defaults();
+		Netgame.gamemode = (ubyte)Dedicated_cfg.mode;
+		Netgame.levelnum = Dedicated_cfg.level;
+		Netgame.max_numplayers = Dedicated_cfg.maxplayers;
+		memset(Netgame.game_name, 0, sizeof(Netgame.game_name));
+		strncpy(Netgame.game_name, Dedicated_cfg.game_name, NETGAME_NAME_LEN);
+		memset(Netgame.mission_name, 0, sizeof(Netgame.mission_name));
+		strncpy(Netgame.mission_name, Dedicated_cfg.mission, 8);
+	}
+
+	// dedicated sessions are always open and tracker-less
+	Netgame.RefusePlayers = 0;
+	Netgame.game_flags &= ~NETGAME_FLAG_CLOSED;
+#ifdef USE_TRACKER
+	Netgame.Tracker = 0;
+#endif
+
+	if (!load_mission_by_name(Netgame.mission_name))
+	{
+		con_printf(CON_URGENT, "[dedicated] mission '%s' not found on server\n", Netgame.mission_name);
+		return 0;
+	}
+	// re-derive the names from what actually loaded (same as net_udp_setup_game:4515-4516)
+	strcpy(Netgame.mission_name, Current_mission_filename);
+	strcpy(Netgame.mission_title, Current_mission_longname);
+	if (Netgame.levelnum < 1 || Netgame.levelnum > Last_level)
+	{
+		con_printf(CON_URGENT, "[dedicated] level %d out of range (1..%d)\n", Netgame.levelnum, Last_level);
+		return 0;
+	}
+
+	change_playernum_to(0);
+
+	// socket + identity setup, mirroring net_udp_start_game (net_udp.c:5173-5206).
+	// No broadcast socket: on a server the broker (or another session) owns the
+	// default port, and discovery is the broker's job.
+	snprintf(UDP_MyPort, sizeof(UDP_MyPort), "%d", Dedicated_cfg.port);
+	if (udp_open_socket(0, Dedicated_cfg.port) != 0)
+	{
+		con_printf(CON_URGENT, "[dedicated] cannot bind UDP port %d\n", Dedicated_cfg.port);
+		return 0;
+	}
+	memset(&GBcast, '\0', sizeof(struct _sockaddr));
+	udp_dns_filladdr(UDP_BCAST_ADDR, UDP_PORT_DEFAULT, &GBcast);
+	d_srand( (fix)timer_query() );
+	Netgame.protocol.udp.GameID = d_rand();
+	N_players = 0;
+	Endlevel_sequence = Control_center_destroyed = 0;
+	Netgame.game_status = NETSTAT_STARTING;
+	Netgame.numplayers = 0;
+	Netgame.numobservers = 0;
+	net_udp_set_game_mode(Netgame.gamemode, 0);
+	Netgame.players[0].protocol.udp.isyou = 1;
+	Network_status = NETSTAT_STARTING;
+	netgame_token = generate_token();
+
+	// select-players equivalent: register the host slot (net_udp.c:5028),
+	// then the unchecked-host observer path (net_udp.c:5145-5150)
+	net_udp_add_player(&UDP_Seq);
+	Netgame.host_is_obs = 1;
+	Host_is_obs = 1;
+	Game_mode |= GM_OBSERVER;
+	Current_obs_player = 0;
+
+	// loads the level, creates the 8 network player objects, runs the host
+	// sync (dedicated branch of net_udp_wait_for_requests + net_udp_send_sync),
+	// ghosts the observer-host object, and lands in NETSTAT_PLAYING
+	StartNewLevel(Netgame.levelnum);
+
+	if (Network_status != NETSTAT_PLAYING)
+	{
+		con_printf(CON_URGENT, "[dedicated] level start failed (status %d)\n", Network_status);
+		return 0;
+	}
+	return 1;
+}
+
 int
 net_udp_wait_for_sync(void)
 {
@@ -5308,8 +5444,33 @@ int net_udp_wait_for_requests(void)
 
 	Players[Player_num].connected = CONNECT_PLAYING;
 
+	if (Dedicated_server)
+	{
+		// No menu: wait (max 45 s) until every still-connected player has
+		// re-requested the new level (net_udp_process_request flips them to
+		// CONNECT_PLAYING); net_udp_timeout_check dumps silent ones.
+		// With zero players connected this returns immediately.
+		fix64 deadline = timer_query() + F1_0 * 45;
+		for (;;) {
+			int i, waiting = 0;
+			timer_update();
+			timer_delay2(20);
+			net_udp_listen();
+			net_udp_timeout_check(timer_query());
+			for (i = 1; i < N_players; i++)
+				if (Players[i].connected && Players[i].connected != CONNECT_PLAYING)
+					waiting++;
+			if (!waiting)
+				return 0;
+			if (timer_query() > deadline) {
+				con_printf(CON_NORMAL, "[dedicated] starting level without %d slow player(s)\n", waiting);
+				return 0;
+			}
+		}
+	}
+
 menu:
-	choice = newmenu_do(NULL, TXT_WAIT, 1, m, net_udp_request_poll, NULL);	
+	choice = newmenu_do(NULL, TXT_WAIT, 1, m, net_udp_request_poll, NULL);
 
 	if (choice == -1)
 	{

@@ -364,7 +364,13 @@ void ogl_texwrap(ogl_texture *gltexture,int state)
 void ogl_cache_level_textures(void)
 {
 	int i;
-	
+
+	{
+		extern int Dedicated_server;
+		if (Dedicated_server)
+			return; /* headless: no GL context exists to upload textures into */
+	}
+
 	ogl_reset_texture_stats_internal();//loading a new lev should reset textures
 
 	if (!ogl_allow_png())

@@ -25,6 +25,8 @@ void net_udp_send_mdata_direct(ubyte *data, int data_len, int pnum, int priority
 void net_udp_send_netgame_update();
 void net_udp_send_obs_quit();
 int net_udp_pack_game_info(ubyte *buf, ubyte info_upid, struct _sockaddr *sender_addr, uint player_token);
+int net_udp_dedicated_start_game(void);
+void net_udp_close(void);
 
 // Some defines
 #ifdef IPv6

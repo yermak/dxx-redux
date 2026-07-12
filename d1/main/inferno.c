@@ -472,7 +472,11 @@ int main(int argc, char *argv[])
 
 	if (Dedicated_server)
 	{
-		dedicated_parse_cfg(GameArg.SysDedicated);
+		if (!dedicated_parse_cfg(GameArg.SysDedicated))
+		{
+			con_printf(CON_URGENT, "[dedicated] session config unusable, exiting\n");
+			exit(1);
+		}
 		dedicated_main();       /* never returns */
 	}
 
