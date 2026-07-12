@@ -71,6 +71,12 @@
 #if GSP_UPID_LITE_REQ_SIZE != UPID_GAME_INFO_LITE_REQ_SIZE
 #error gsp.h UPID_GAME_INFO_LITE_REQ_SIZE mirror out of sync
 #endif
+/* The broker parses the lite reply by the hardcoded GSP_LITE_OFF_* offsets in
+ * gsp.h; catch any future change to the engine's lite packing at compile time
+ * rather than as silent cross-process corruption. */
+#if GSP_LITE_SIZE != UPID_GAME_INFO_LITE_SIZE
+#error gsp.h GSP_LITE_SIZE out of sync with engine lite packing
+#endif
 
 #ifdef _WIN32
 #include <Windows.h>
