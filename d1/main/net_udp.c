@@ -277,10 +277,12 @@ char* msg_name(int type)
 			return "UPID_MDATA_PNEEDACK";
 		case UPID_MDATA_ACK:
 			return "UPID_MDATA_ACK";
+#ifdef USE_TRACKER
 		case UPID_TRACKER_VERIFY:
-			return "UPID_TRACKER_VERIFY";			
+			return "UPID_TRACKER_VERIFY";
 		case UPID_TRACKER_INCGAME:
 			return "UPID_TRACKER_INCGAME";
+#endif
 
 		case UPID_P2P_PING:
 			return "UPID_P2P_PING"; 		
