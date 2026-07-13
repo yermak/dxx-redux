@@ -28,3 +28,10 @@ game data in ./hogs). Game data is never baked into the image.
 ## Firewall
 
 Open UDP 42424 (broker) and 42425..(42425+max-sessions-1) (games).
+
+## Cloud hosting (Google Cloud)
+
+See [DEPLOY-GCP.md](DEPLOY-GCP.md) and the `deploy-gcp.sh` script for hosting on
+Google Compute Engine (a VM with a public IP + UDP firewall rule). Note: Cloud Run
+cannot host this — it is TCP/HTTP-only, single-port, and stateless, whereas this
+server is UDP, multi-port, and stateful. `DEPLOY-GCP.md` explains the details.
