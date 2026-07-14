@@ -43,8 +43,16 @@ MACHINE_TYPE="e2-small"                        # e2-micro = free-tier-eligible b
 INSTANCE="dxx-gameserver"
 IMAGE_LOCAL="d1x-gameserver:latest"            # the data-less image
 DATA_DIR="/c/Users/Yermak/Projects/dxx-redux/d1/hogs"   # your Descent data folder
-SRC_RANGES="0.0.0.0/0"                         # who may connect. 0.0.0.0/0 = the whole internet.
-                                               #   Restrict to your players' IPs if you can, e.g. "203.0.113.7/32"
+# --- Who may connect (firewall source) --------------------------------------
+# Option A: restrict to THIS machine's current public IP automatically.
+RESTRICT_TO_MY_IP="no"                         # "yes" = allow ONLY your current public IP (/32)
+# Option B (used when RESTRICT_TO_MY_IP != "yes"): set the allowed ranges yourself.
+#   "0.0.0.0/0" = the whole internet. Comma-separate players, each as a /32, e.g.
+#   "203.0.113.7/32,198.51.100.4/32"  (the server sees each player's PUBLIC IP).
+SRC_RANGES="0.0.0.0/0"
+# Tip: to change who is allowed later WITHOUT redeploying the VM, edit the values
+# above and re-run with:   FIREWALL_ONLY=yes bash deploy-gcp.sh
+# ---------------------------------------------------------------------------
 MAX_SESSIONS="8"                               # concurrent games (game ports 42425..42425+MAX-1)
 TIMEOUT_EMPTY_START="600"                       # seconds a new session waits for its first player before closing
 ##############################################################################
@@ -59,18 +67,45 @@ $GC config set project "$PROJECT" >/dev/null
 echo ">> Enabling Compute Engine API (idempotent)"
 $GC services enable compute.googleapis.com >/dev/null
 
+# --- Resolve the allowed source range(s) ---
+if [ "$RESTRICT_TO_MY_IP" = "yes" ]; then
+  echo ">> Detecting this machine's public IP..."
+  MY_IP="$(curl -fsS --max-time 10 https://api.ipify.org 2>/dev/null \
+        || curl -fsS --max-time 10 https://ifconfig.me 2>/dev/null || true)"
+  if [ -z "$MY_IP" ]; then
+    echo "!! Could not auto-detect your public IP. Set RESTRICT_TO_MY_IP=no and put" >&2
+    echo "   your address in SRC_RANGES manually (find it at https://ifconfig.me )." >&2
+    exit 1
+  fi
+  SRC_RANGES="$MY_IP/32"
+  echo "   allowing ONLY $SRC_RANGES (this machine's current public IP)"
+  echo "   note: play from THIS network, or add each player's public IP to SRC_RANGES."
+fi
+
+# --- Firewall: create, or UPDATE in place so re-runs apply a changed SRC_RANGES ---
+echo ">> Firewall '$NET_TAG-udp': UDP 42424-42440 from $SRC_RANGES"
+if $GC compute firewall-rules describe "$NET_TAG-udp" >/dev/null 2>&1; then
+  $GC compute firewall-rules update "$NET_TAG-udp" --source-ranges="$SRC_RANGES"
+  echo "   updated existing rule (source ranges replaced with the above)"
+else
+  $GC compute firewall-rules create "$NET_TAG-udp" \
+    --direction=INGRESS --action=ALLOW \
+    --rules=udp:42424-42440 \
+    --source-ranges="$SRC_RANGES" \
+    --target-tags="$NET_TAG"
+fi
+
+# Fast path: (re)configure only the firewall — e.g. to add/remove a player's IP —
+# without re-uploading the image or touching the VM.
+if [ "${FIREWALL_ONLY:-no}" = "yes" ]; then
+  echo ">> FIREWALL_ONLY=yes — firewall configured; skipping VM deploy. Done."
+  exit 0
+fi
+
 echo ">> Reserving static external IP '$INSTANCE-ip' (idempotent)"
 $GC compute addresses create "$INSTANCE-ip" --region="$REGION" 2>/dev/null || true
 STATIC_IP=$($GC compute addresses describe "$INSTANCE-ip" --region="$REGION" --format='value(address)')
 echo "   static IP = $STATIC_IP"
-
-echo ">> Firewall rule '$NET_TAG-udp' for UDP 42424-42440 from $SRC_RANGES (idempotent)"
-$GC compute firewall-rules create "$NET_TAG-udp" \
-  --direction=INGRESS --action=ALLOW \
-  --rules=udp:42424-42440 \
-  --source-ranges="$SRC_RANGES" \
-  --target-tags="$NET_TAG" 2>/dev/null || \
-  echo "   (rule exists; to change the allowed source run: gcloud compute firewall-rules update $NET_TAG-udp --source-ranges=... )"
 
 echo ">> Creating VM '$INSTANCE' (idempotent)"
 $GC compute instances create "$INSTANCE" \

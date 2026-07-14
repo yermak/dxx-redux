@@ -163,12 +163,32 @@ gcloud compute instances start dxx-gameserver --zone=<zone>
 
 ## Security
 
-- `SRC_RANGES="0.0.0.0/0"` exposes the UDP ports to the entire internet — required
-  for arbitrary players to connect, but it is open. Restrict it to known player IPs
-  when you can:
-  ```bash
-  gcloud compute firewall-rules update dxx-gameserver-udp --source-ranges=<ip>/32,<ip>/32
+**Restricting who can connect (firewall source).** By default `SRC_RANGES="0.0.0.0/0"`
+opens the UDP ports to the entire internet. The script gives you two ways to lock it
+down, both in the CONFIG block:
+
+- **Just you** — set `RESTRICT_TO_MY_IP="yes"`. The script detects the public IP of
+  the machine you run it from and allows only that address (`/32`). Play from the
+  **same network** you ran it from (the server sees your home connection's public IP).
+- **A specific set of players** — leave `RESTRICT_TO_MY_IP="no"` and list each
+  player's **public IP** in `SRC_RANGES`, comma-separated, each as a `/32`:
   ```
+  SRC_RANGES="203.0.113.7/32,198.51.100.4/32"
+  ```
+
+**Changing the allowed IPs later** (e.g. add a friend, or your home IP changed) —
+edit the values above and re-run just the firewall step, no VM redeploy:
+```bash
+FIREWALL_ONLY=yes bash d1/gameserver/deploy-gcp.sh
+```
+This **replaces** the rule's full source list with your current `SRC_RANGES`, so
+include every IP you want allowed. (Equivalent raw command:
+`gcloud compute firewall-rules update dxx-gameserver-udp --source-ranges=<ip>/32,<ip>/32`.)
+
+Caveats: home/consumer IPs are often **dynamic** and can change — if players suddenly
+can't connect, their (or your) public IP likely changed; re-run the firewall step with
+the new value. Each player is identified by the public IP their traffic arrives from,
+so everyone behind a different router/NAT needs their own `/32` entry.
 - There is no authentication on game creation in v1 (the spec defers auth). Anyone
   who can reach the broker can create/list/join sessions, bounded by `GS_MAX_SESSIONS`
   and the per-IP create rate limit. Keep that in mind if you leave it open.
