@@ -31,18 +31,88 @@ The **clean, data-less** image is shipped to the VM with `docker save | scp | do
 — no container registry needed. Your Descent data files are uploaded to the VM only
 (`scp`), never to any Google-hosted registry.
 
-## Prerequisites
+## One-time GCP setup
 
-1. **gcloud CLI** installed and authenticated: `gcloud auth login`
-2. A **GCP project with billing enabled** (note the project ID).
-3. **Docker** running locally with the image built:
-   ```bash
-   docker images | grep d1x-gameserver     # expect  d1x-gameserver:latest
-   # if missing:
-   cd d1 && docker build -t d1x-gameserver .
-   ```
-4. Your **Descent data files** (`descent.hog`, `descent.pig`, plus any add-on
-   mission `.hog`/`.msn`) in one folder.
+Do these once. Steps 1–4 are in the browser (Google Cloud Console); steps 5–8 are
+on your PC.
+
+### 1. Google Cloud account
+Go to <https://console.cloud.google.com> and sign in with a Google account. First
+time: accept the free trial if offered (US$300 credit / 90 days — optional, but it
+covers this comfortably).
+
+### 2. Enable billing
+Console → ☰ menu → **Billing** → create/link a billing account with a payment
+method. Compute Engine needs an active billing account **even for free-tier
+resources**.
+
+### 3. Create a project
+- Top bar → project dropdown → **New Project** → name it (e.g. `dxx-server`) → Create.
+- Note its **Project ID** (Console → ☰ → **Cloud overview → Dashboard**). It looks
+  like `dxx-server-472913` — this is **not** the display name, and it is exactly
+  what goes in the script's `PROJECT=`.
+- Confirm **billing is linked to this project** (Billing → the project shows "linked").
+
+### 4. Enable the Compute Engine API
+Console → ☰ → **APIs & Services → + Enable APIs and Services** → search
+**Compute Engine API** → **Enable**. The first enable takes ~1 minute and creates
+the project's default Compute service account. (The script also runs
+`gcloud services enable compute.googleapis.com`; doing it here first avoids the wait.)
+
+### 5. Install the Google Cloud CLI (on your PC)
+Download the Windows installer: <https://cloud.google.com/sdk/docs/install> → run it,
+accept defaults. Open a **new** terminal (Git Bash, or the "Google Cloud SDK Shell"
+the installer adds) and verify:
+```bash
+gcloud --version
+```
+
+### 6. Authenticate and select the project
+```bash
+gcloud auth login                          # opens a browser; sign in, allow access
+gcloud config set project YOUR_PROJECT_ID
+gcloud config get-value project            # should echo your Project ID
+```
+
+### 7. Permissions (IAM)
+- If **you** created the project, you are its **Owner** — you already have every
+  permission the script needs. Skip this step.
+- If someone else owns it, have them grant your account, on the project:
+  **Compute Admin** (`roles/compute.admin`) and **Service Account User**
+  (`roles/iam.serviceAccountUser`):
+  ```bash
+  gcloud projects add-iam-policy-binding YOUR_PROJECT_ID \
+    --member="user:you@example.com" --role="roles/compute.admin"
+  gcloud projects add-iam-policy-binding YOUR_PROJECT_ID \
+    --member="user:you@example.com" --role="roles/iam.serviceAccountUser"
+  ```
+- The **VM's own** service account needs no extra roles: the deploy ships the image
+  and data to the VM over SSH/scp, so the VM never pulls from a registry or bucket.
+
+### 8. Local prerequisites
+- **Docker Desktop running**, with the image built (`docker images | grep d1x-gameserver`
+  → expect `d1x-gameserver:latest`; rebuild with `cd d1 && docker build -t d1x-gameserver .`).
+- Your **Descent data files** (`descent.hog`, `descent.pig`, plus any add-on mission
+  `.hog`/`.msn`) in one folder.
+- **Run `deploy-gcp.sh` from this PC** (Git Bash) — **not** from Cloud Shell. The
+  script uploads your *local* Docker image, which only exists on your machine.
+
+### What the script configures for you (no manual action)
+- Uses your project's **default VPC network** (auto-created with new projects — no
+  network setup needed).
+- Reserves a **static external IP**.
+- Creates the **firewall rule** allowing inbound UDP 42424–42440 from `SRC_RANGES`.
+- Creates the **VM** (Ubuntu + Docker), uploads the image + data, runs the container.
+
+### Common first-run issues
+- **"Billing must be enabled"** → finish steps 2–3 (billing linked to the project).
+- **Quota error** on brand-new/free-trial accounts (e.g. `IN_USE_ADDRESSES`, CPU) →
+  pick a different `ZONE`/region, or Console → **IAM & Admin → Quotas** to check/raise.
+  A single `e2-small` + one static IP is within default quotas in most regions.
+- **First `gcloud compute ssh` asks to create an SSH key** → press Enter (an empty
+  passphrase is fine); the script waits for the key to propagate.
+- **`gcloud: command not found`** right after install → open a new terminal, or use
+  the "Google Cloud SDK Shell" the installer created.
 
 ## Deploy
 
