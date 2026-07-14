@@ -61,6 +61,11 @@ REGION="${ZONE%-*}"
 NET_TAG="dxx-gameserver"
 GC="gcloud --project=$PROJECT --quiet"
 
+# On Windows, gcloud uses PuTTY's pscp, which needs Windows-style local paths
+# (C:/...) not MSYS/Git-Bash paths (/c/...). Convert /<drive>/ -> <drive>:/ .
+# No-op on Linux/macOS (their absolute paths don't match the pattern).
+msys2win() { echo "$1" | sed -E 's#^/([a-zA-Z])/#\1:/#'; }
+
 echo ">> Project $PROJECT | zone $ZONE (region $REGION)"
 $GC config set project "$PROJECT" >/dev/null
 
@@ -123,21 +128,24 @@ until $GC compute ssh "$INSTANCE" --zone="$ZONE" \
 done
 
 echo ">> Exporting the local image and uploading it (~50 MB gzipped)"
-TMP_IMG="$(mktemp -t dxximg.XXXXXX).tgz"
+# Write beside the data folder (a real drive) so Windows pscp can read it; mktemp's
+# MSYS /tmp path is invisible to gcloud's native pscp. Remote paths are absolute
+# (/tmp/...) not ~ , which pscp does not expand on Windows.
+TMP_IMG="$(dirname "$DATA_DIR")/.dxx-image.tgz"
 docker save "$IMAGE_LOCAL" | gzip > "$TMP_IMG"
-$GC compute scp "$TMP_IMG" "$INSTANCE:~/dxx-image.tgz" --zone="$ZONE"
+$GC compute scp "$(msys2win "$TMP_IMG")" "$INSTANCE:/tmp/dxx-image.tgz" --zone="$ZONE"
 rm -f "$TMP_IMG"
 
 echo ">> Uploading game data from $DATA_DIR"
 DATA_BASENAME="$(basename "$DATA_DIR")"
-$GC compute scp --recurse "$DATA_DIR" "$INSTANCE:~/" --zone="$ZONE"
+$GC compute scp --recurse "$(msys2win "$DATA_DIR")" "$INSTANCE:/tmp/" --zone="$ZONE"
 
 echo ">> Loading image, staging data, launching the container"
 $GC compute ssh "$INSTANCE" --zone="$ZONE" --command="
   set -e
-  sudo docker load -i ~/dxx-image.tgz
+  sudo docker load -i /tmp/dxx-image.tgz
   sudo mkdir -p /opt/dxx-data
-  sudo cp ~/$DATA_BASENAME/* /opt/dxx-data/
+  sudo cp /tmp/$DATA_BASENAME/* /opt/dxx-data/
   sudo docker rm -f gameserver 2>/dev/null || true
   sudo docker run -d --name gameserver --restart unless-stopped \
     -p 42424-42440:42424-42440/udp \
