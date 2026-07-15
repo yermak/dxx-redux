@@ -304,6 +304,19 @@ static int gameserver_menu_handler(newmenu *menu, d_event *event, void *userdata
 	int citem = newmenu_get_citem(menu);
 	userdata = userdata;
 
+	// The item array is heap-allocated (see do_gameserver_menu). This menu
+	// stays open with the game running nested inside its event loop, and
+	// aborting the game longjmps out of that loop (game.c EVENT_WINDOW_CLOSED
+	// -> inferno LeaveEvents), abandoning do_gameserver_menu's stack frame.
+	// Heap items keep menu->items valid so the post-abort redraw doesn't
+	// dereference reclaimed stack. Free them when the window finally closes.
+	if (event->type == EVENT_WINDOW_CLOSE)
+	{
+		newmenu_item *items = newmenu_get_items(menu);
+		d_free(items);
+		return 0;
+	}
+
 	if (event->type != EVENT_NEWMENU_SELECTED)
 		return 0;
 
@@ -335,10 +348,20 @@ static int gameserver_menu_handler(newmenu *menu, d_event *event, void *userdata
 
 void do_gameserver_menu(void)
 {
-	newmenu_item m[6];
+	newmenu_item *m;
 	int nitems = 0;
 
 	net_udp_init();
+
+	// Heap-allocated, not a stack array: this menu keeps running (its handler
+	// returns 1) while a joined game runs nested in its event loop, and abort
+	// longjmps out of that loop past this frame. Stack items would dangle and
+	// crash on the post-abort redraw. Freed in gameserver_menu_handler's
+	// EVENT_WINDOW_CLOSE. Mirrors do_multi_player_menu.
+	MALLOC(m, newmenu_item, 6);
+	if (!m)
+		return;
+	memset(m, 0, sizeof(newmenu_item) * 6);
 
 	if (!GameCfg.GameserverAddr[0])
 		snprintf(GameCfg.GameserverAddr, sizeof(GameCfg.GameserverAddr), "localhost");
