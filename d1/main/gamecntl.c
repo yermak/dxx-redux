@@ -509,7 +509,16 @@ int HandleSystemKey(int key)
 				switch(choice)
 				{
 					case 0: // Abort Game
-						window_close(Game_wind);
+						// In a live multiplayer game, show the end-of-level
+						// scoreboard (kills/scores at the moment you leave)
+						// before dropping out. multi_endlevel_score() runs the
+						// kmatrix screen; if the player aborts from within it,
+						// that path already leaves and closes Game_wind, so the
+						// guarded close below fires exactly once.
+						if ((Game_mode & GM_MULTI) && !Endlevel_sequence && !Control_center_destroyed)
+							multi_endlevel_score();
+						if (Game_wind)
+							window_close(Game_wind);
 						break;
 					case 1: // Options
 						HandleSystemKey(KEY_F2);
