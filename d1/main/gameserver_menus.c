@@ -364,7 +364,7 @@ void do_gameserver_menu(void)
 	memset(m, 0, sizeof(newmenu_item) * 6);
 
 	if (!GameCfg.GameserverAddr[0])
-		snprintf(GameCfg.GameserverAddr, sizeof(GameCfg.GameserverAddr), "localhost");
+		snprintf(GameCfg.GameserverAddr, sizeof(GameCfg.GameserverAddr), "eu.descent.one");
 	snprintf(GSP_portbuf, sizeof(GSP_portbuf), "%d", GameCfg.GameserverPort);
 	if (GameArg.MplUdpMyPort != 0)
 		snprintf(GSP_myportbuf, sizeof(GSP_myportbuf), "%d", GameArg.MplUdpMyPort);

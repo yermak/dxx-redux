@@ -121,7 +121,7 @@ int ReadConfigFile()
 	GameCfg.BorderlessWindow = 0;
 	GameCfg.SurroundMode = 0;
 	GameCfg.SurroundAngle = 180;
-	memset(GameCfg.GameserverAddr, 0, sizeof(GameCfg.GameserverAddr));
+	snprintf(GameCfg.GameserverAddr, sizeof(GameCfg.GameserverAddr), "eu.descent.one");
 	GameCfg.GameserverPort = 42424;
 
 	infile = PHYSFSX_openReadBuffered("descent.cfg");
