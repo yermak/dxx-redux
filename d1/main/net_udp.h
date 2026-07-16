@@ -24,6 +24,9 @@ int net_udp_level_sync();
 void net_udp_send_mdata_direct(ubyte *data, int data_len, int pnum, int priority);
 void net_udp_send_netgame_update();
 void net_udp_send_obs_quit();
+int net_udp_pack_game_info(ubyte *buf, ubyte info_upid, struct _sockaddr *sender_addr, uint player_token);
+int net_udp_dedicated_start_game(void);
+void net_udp_close(void);
 
 // Some defines
 #ifdef IPv6
@@ -176,7 +179,30 @@ typedef struct UDP_mdata_recv
 	int				pkt_num[UDP_MDATA_STOR_QUEUE_SIZE];
 	int				cur_slot; // index we can use for a new pkt_num
 } __pack__ UDP_mdata_recv;
-	
+
+// State for a pending direct-connect (manual join, or GSP-broker join)
+typedef struct direct_join
+{
+	struct _sockaddr host_addr;
+	int connecting;
+	fix64 start_time, last_time;
+	char addrbuf[128];
+	char portbuf[6];
+	ubyte join_as_obs;
+} direct_join;
+
+// Exported so gameserver_menus.c (Game Server broker client) can drive joins
+// and listen for GSP replies on the same primary UDP socket.
+int net_udp_game_connect(direct_join *dj);
+int udp_open_socket(int socknum, int port);
+int udp_dns_filladdr(char *host, int port, struct _sockaddr *sAddr);
+void net_udp_init(void);
+void net_udp_listen(void);
+void net_udp_update_netgame(void);
+void net_udp_reset_connection_statuses(void);
+// Thin wrapper around the file-static UDP_Socket[0]/dxx_sendto so GSP code
+// outside net_udp.c never needs direct access to either.
+int net_udp_gsp_sendto(const ubyte *buf, int len, struct _sockaddr *to);
 
 typedef enum {CONNT_NONE, CONNT_DIRECT, CONNT_PROXY} connection_type;
 typedef struct connection_status {

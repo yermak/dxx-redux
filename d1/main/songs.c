@@ -305,6 +305,12 @@ int songs_play_file(char *filename, int repeat, void (*hook_finished_track)())
 
 int songs_play_song( int songnum, int repeat )
 {
+	{
+		extern int Dedicated_server;
+		if (Dedicated_server)
+			return 0;
+	}
+
 	songs_init();
 	if (!Songs_initialized)
 		return 0;
@@ -385,6 +391,12 @@ void redbook_first_song_func()
 int songs_play_level_song( int levelnum, int offset )
 {
 	int songnum;
+
+	{
+		extern int Dedicated_server;
+		if (Dedicated_server)
+			return 0;
+	}
 
 	Assert( levelnum != 0 );
 

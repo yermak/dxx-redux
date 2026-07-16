@@ -52,6 +52,8 @@ typedef struct Cfg
 	int BorderlessWindow;
 	int SurroundMode;
 	int SurroundAngle;
+	char GameserverAddr[128];
+	int GameserverPort;
 } __pack__ Cfg;
 
 extern struct Cfg GameCfg;

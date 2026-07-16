@@ -90,6 +90,7 @@ COPYRIGHT 1993-1998 PARALLAX SOFTWARE CORPORATION.  ALL RIGHTS RESERVED.
 #include "vers_id.h"
 #include "event.h"
 #include "window.h"
+#include "dedicated.h"
 
 #ifdef OGL
 #include "ogl_init.h"
@@ -922,6 +923,20 @@ window *game_setup(void)
 	last_drawn_cockpit = -1;	// Force cockpit to redraw next time a frame renders.
 	Endlevel_sequence = 0;
 
+	if (Dedicated_server)
+	{
+		/* headless: no canvas to create a window on. Skip the window/HUD
+		 * setup but still perform the simulation-side setup below so the
+		 * observer-host object and frame timing are left in a sane state. */
+		Viewer = ConsoleObject;
+		fly_init(ConsoleObject);
+		Game_suspended = 0;
+		reset_time();
+		FrameTime = 0;
+		fix_object_segs();
+		return NULL;
+	}
+
 	game_wind = window_create(&grd_curscreen->sc_canvas, 0, 0, SWIDTH, SHEIGHT, game_handler, NULL);
 	if (!game_wind)
 		return NULL;
@@ -1115,7 +1130,8 @@ void GameProcessFrame(void)
 	int player_was_dead = Player_is_dead;
 
 	update_player_stats();
-	diminish_palette_towards_normal();		//	Should leave palette effect up for as long as possible by putting right before render.
+	if (!Dedicated_server)
+		diminish_palette_towards_normal();		//	Should leave palette effect up for as long as possible by putting right before render.
 	do_cloak_stuff();
 	do_invulnerable_stuff();
 	remove_obsolete_stuck_objects();

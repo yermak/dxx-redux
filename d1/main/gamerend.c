@@ -684,7 +684,13 @@ void show_boxed_message(char *msg, int RenderFlag)
 {
 	int w,h,aw;
 	int x,y;
-	
+
+	{
+		extern int Dedicated_server;
+		if (Dedicated_server)
+			return; /* headless: no video surface exists */
+	}
+
 	gr_set_current_canvas(NULL);
 	gr_set_curfont( MEDIUM1_FONT );
 	gr_set_fontcolor(BM_XRGB(31, 31, 31), -1);

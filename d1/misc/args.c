@@ -143,6 +143,7 @@ void ReadCmdArgs(void)
 	GameArg.SysNoBorders 		= FindArg("-noborders");
 	GameArg.SysNoTitles 		= FindArg("-notitles");
 	GameArg.SysAutoDemo 		= FindArg("-autodemo");
+	GameArg.SysDedicated 		= get_str_arg("-dedicated", NULL);
 
 	// Control Options
 

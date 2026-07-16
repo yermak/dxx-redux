@@ -67,6 +67,8 @@ static const char GrabinputStr[] ="GrabInput";
 static const char BorderlessWindowStr[] ="BorderlessWindow";
 static const char SurroundModeStr[] ="SurroundMode";
 static const char SurroundAngleStr[] ="SurroundAngle";
+static const char GameserverAddrStr[] = "GameserverAddr";
+static const char GameserverPortStr[] = "GameserverPort";
 
 int ReadConfigFile()
 {
@@ -119,6 +121,8 @@ int ReadConfigFile()
 	GameCfg.BorderlessWindow = 0;
 	GameCfg.SurroundMode = 0;
 	GameCfg.SurroundAngle = 180;
+	memset(GameCfg.GameserverAddr, 0, sizeof(GameCfg.GameserverAddr));
+	GameCfg.GameserverPort = 42424;
 
 	infile = PHYSFSX_openReadBuffered("descent.cfg");
 
@@ -236,6 +240,14 @@ int ReadConfigFile()
 				GameCfg.SurroundMode = strtol(value, NULL, 10);
 			else if (!strcmp(token, SurroundAngleStr))
 				GameCfg.SurroundAngle = strtol(value, NULL, 10);
+			else if (!strcmp(token, GameserverAddrStr))	{
+				char * p;
+				strncpy( GameCfg.GameserverAddr, value, sizeof(GameCfg.GameserverAddr) - 1 );
+				p = strchr( GameCfg.GameserverAddr, '\n');
+				if ( p ) *p = 0;
+			}
+			else if (!strcmp(token, GameserverPortStr))
+				GameCfg.GameserverPort = strtol(value, NULL, 10);
 		}
 		d_free(line);
 	}
@@ -298,6 +310,8 @@ int WriteConfigFile()
 	PHYSFSX_printf(infile, "%s=%i\n", BorderlessWindowStr, GameCfg.BorderlessWindow);
 	PHYSFSX_printf(infile, "%s=%i\n", SurroundModeStr, GameCfg.SurroundMode);
 	PHYSFSX_printf(infile, "%s=%i\n", SurroundAngleStr, GameCfg.SurroundAngle);
+	PHYSFSX_printf(infile, "%s=%s\n", GameserverAddrStr, GameCfg.GameserverAddr);
+	PHYSFSX_printf(infile, "%s=%i\n", GameserverPortStr, GameCfg.GameserverPort);
 
 	PHYSFS_close(infile);
 

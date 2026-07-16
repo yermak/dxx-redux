@@ -73,7 +73,10 @@ int robot_send_pending[MAX_ROBOTS_CONTROLLED];
 int robot_fired[MAX_ROBOTS_CONTROLLED];
 ubyte robot_fire_buf[MAX_ROBOTS_CONTROLLED][18+3];
 
-#define MULTI_ROBOT_PRIORITY(objnum, pnum) ((objnum + pnum) % (N_players - (Netgame.host_is_obs ? 1 : 0)))
+/* Number of players eligible to control robots; at least 1 so the modulus
+   below stays defined while a dedicated (observer-host) session is empty. */
+#define MULTI_ROBOT_NUM_CONTROLLERS ((N_players - (Netgame.host_is_obs ? 1 : 0)) > 0 ? (N_players - (Netgame.host_is_obs ? 1 : 0)) : 1)
+#define MULTI_ROBOT_PRIORITY(objnum, pnum) ((objnum + pnum) % MULTI_ROBOT_NUM_CONTROLLERS)
 
 int
 multi_can_move_robot(int objnum, int agitation)

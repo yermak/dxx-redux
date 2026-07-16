@@ -11,6 +11,7 @@ add_executable (d1x-redux
     controls.c
     credits.c
     custom.c
+    dedicated.c
     digiobj.c
     dumpmine.c
     effects.c
@@ -98,7 +99,7 @@ if(EDITOR)
 endif()
 
 if(UDP)
-    target_sources(d1x-redux PRIVATE net_udp.c)
+    target_sources(d1x-redux PRIVATE net_udp.c gameserver_menus.c)
 endif()
 
 if(WIN32)
@@ -173,6 +174,9 @@ if(PNG)
     find_package(PNG REQUIRED)
 endif()
 target_include_directories(d1x-redux PUBLIC ${SDL_INCLUDE_DIR} ${PHYSFS_INCLUDE_DIR})
+if(UDP)
+    target_include_directories(d1x-redux PRIVATE ../gameserver)
+endif()
 target_link_libraries(d1x-redux PRIVATE 2d 3d arch_sdl iff maths mem misc texmap)
 target_link_libraries(d1x-redux PUBLIC ${OPENGL_LIBRARY} ${SDL_LIBRARY} ${SDL_MIXER_LIBRARY} ${PHYSFS_LIBRARY} ${PNG_LIBRARY} ${EXTRA_LIBRARIES})
 target_sources(d1x-redux PRIVATE vers_id.c)

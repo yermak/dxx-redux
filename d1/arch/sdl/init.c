@@ -38,6 +38,20 @@ void arch_init(void)
 {
 	int t;
 
+	extern int Dedicated_server;
+	if (Dedicated_server)
+	{
+		if (SDL_Init(SDL_INIT_TIMER) < 0)
+			Error("SDL library initialisation failed: %s.", SDL_GetError());
+		/* Same as interactive -nosound: wire up the digi_* function
+		 * pointers (cheap, no device opened) so level load's unconditional
+		 * digi_init_sounds()/set_sound_sources() calls have valid fptrs to
+		 * call into. Never call digi_init() itself -- that's what would
+		 * open a real audio device. */
+		digi_select_system( GameArg.SndDisableSdlMixer ? SDLAUDIO_SYSTEM : SDLMIXER_SYSTEM );
+		return; /* headless: no video, no input devices, no sound device */
+	}
+
 	if (SDL_Init(SDL_INIT_VIDEO) < 0)
 		Error("SDL library initialisation failed: %s.",SDL_GetError());
 

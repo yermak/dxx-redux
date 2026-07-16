@@ -73,6 +73,7 @@ char copyright[] = "DESCENT   COPYRIGHT (C) 1994,1995 PARALLAX SOFTWARE CORPORAT
 #include "event.h"
 #include "rbaudio.h"
 #include "messagebox.h"
+#include "dedicated.h"
 #ifdef EDITOR
 #include "editor/editor.h"
 #include "editor/kdefs.h"
@@ -109,6 +110,7 @@ void print_commandline_help()
 	printf( "  -window                       Run the game in a window\n");
 	printf( "  -noborders                    Do not show borders in window mode\n");
 	printf( "  -notitles                     Skip title screens\n");
+	printf( "  -dedicated <f>                Run headless dedicated game server with session file <f>\n");
 
 	printf( "\n Controls:\n\n");
 	printf( "  -nocursor                     Hide mouse cursor\n");
@@ -311,6 +313,13 @@ int main(int argc, char *argv[])
 	PHYSFSX_init(argc, argv);
 	con_init();  // Initialise the console
 
+	if (GameArg.SysDedicated)
+	{
+		Dedicated_server = 1;
+		error_init(NULL);      /* console-only errors; the msgbox handlers */
+		set_warn_func(NULL);   /* registered above would pop Win32 dialogs */
+	}
+
 	setbuf(stdout, NULL); // unbuffered output via printf
 #ifdef _WIN32
 	freopen( "CON", "w", stdout );
@@ -394,21 +403,29 @@ int main(int argc, char *argv[])
 
 	select_tmap(GameArg.DbgTexMap);
 
-	con_printf(CON_VERBOSE, "Going into graphics mode...\n");
-	gr_set_mode(Game_screen_mode);
+	if (!Dedicated_server)
+	{
+		con_printf(CON_VERBOSE, "Going into graphics mode...\n");
+		gr_set_mode(Game_screen_mode);
+	}
 
 	// Load the palette stuff. Returns non-zero if error.
 	con_printf(CON_DEBUG, "Initializing palette system...\n" );
-	gr_use_palette_table( "PALETTE.256" );
+	gr_use_palette_table( "PALETTE.256" );          /* KEEP: pure data, no canvas */
 
-	con_printf(CON_DEBUG, "Initializing font system...\n" );
-	gamefont_init();	// must load after palette data loaded.
+	if (!Dedicated_server)
+	{
+		con_printf(CON_DEBUG, "Initializing font system...\n" );
+		gamefont_init();	// must load after palette data loaded.
+	}
 
 	set_default_handler(standard_handler);
 
-	show_titles();
-
-	set_screen_mode(SCREEN_MENU);
+	if (!Dedicated_server)
+	{
+		show_titles();
+		set_screen_mode(SCREEN_MENU);
+	}
 
 	con_printf( CON_DEBUG, "\nDoing gamedata_init..." );
 	gamedata_init();
@@ -453,8 +470,18 @@ int main(int argc, char *argv[])
 	}
 
 
-		Game_mode = GM_GAME_OVER;
-		DoMenu();
+	if (Dedicated_server)
+	{
+		if (!dedicated_parse_cfg(GameArg.SysDedicated))
+		{
+			con_printf(CON_URGENT, "[dedicated] session config unusable, exiting\n");
+			exit(1);
+		}
+		dedicated_main();       /* never returns */
+	}
+
+	Game_mode = GM_GAME_OVER;
+	DoMenu();
 
 	setjmp(LeaveEvents);
 	while (window_get_front())

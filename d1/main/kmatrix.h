@@ -21,6 +21,8 @@ COPYRIGHT 1993-1998 PARALLAX SOFTWARE CORPORATION.  ALL RIGHTS RESERVED.
 #ifndef _KMATRIX_H
 #define _KMATRIX_H
 
+#define KMATRIX_VIEW_SEC 7 // Time after reactor explosion until new level - in seconds
+
 void kmatrix_view(int network);
 
 #endif

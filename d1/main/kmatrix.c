@@ -54,7 +54,6 @@ COPYRIGHT 1993-1998 PARALLAX SOFTWARE CORPORATION.  ALL RIGHTS RESERVED.
 
 #define CENTERING_OFFSET(x) ((300 - (70 + (x)*25 ))/2)
 #define CENTERSCREEN (SWIDTH/2)
-#define KMATRIX_VIEW_SEC 7 // Time after reactor explosion until new level - in seconds
 void kmatrix_redraw_coop();
 fix64 StartAbortMenuTime;
 
@@ -304,7 +303,7 @@ int kmatrix_handler(window *wind, d_event *event, kmatrix_screen *km)
 			km->playing = 0;
 
 			// Check if all connected players are also looking at this screen ...
-			for (i = 0; i < MAX_PLAYERS; i++)
+			for (i = (Netgame.host_is_obs ? 1 : 0); i < MAX_PLAYERS; i++)
 				if (Netgame.max_numobservers == 0 || i != OBSERVER_PLAYER_ID)
 					if (Players[i].connected)
 						if (Players[i].connected != CONNECT_END_MENU && Players[i].connected != CONNECT_DIED_IN_MINE)

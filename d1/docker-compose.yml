@@ -1,0 +1,12 @@
+services:
+  d1x-gameserver:
+    build: .
+    ports:
+      - "42424-42440:42424-42440/udp"
+    volumes:
+      - ./hogs:/data:ro
+    environment:
+      GS_MAX_SESSIONS: "8"
+      GS_TIMEOUT_EMPTY_START: "300"
+      GS_TIMEOUT_EMPTY: "60"
+    restart: unless-stopped

@@ -99,6 +99,7 @@ add_subdirectory(maths)
 add_subdirectory(mem)
 add_subdirectory(misc)
 add_subdirectory(texmap)
+add_subdirectory(gameserver)
 
 add_dependencies(d1x-redux 2d 3d arch_sdl iff maths mem misc texmap)
 

@@ -31,6 +31,7 @@ COPYRIGHT 1993-1998 PARALLAX SOFTWARE CORPORATION.  ALL RIGHTS RESERVED.
 #include "object.h"
 #include "physics.h"
 #include "dxxerror.h"
+#include "console.h"
 #include "joy.h"
 #include "iff.h"
 #include "pcx.h"
@@ -71,6 +72,7 @@ COPYRIGHT 1993-1998 PARALLAX SOFTWARE CORPORATION.  ALL RIGHTS RESERVED.
 #include "playsave.h"
 #include "ctype.h"
 #include "multi.h"
+#include "dedicated.h"
 #include "fireball.h"
 #include "kconfig.h"
 #include "config.h"
@@ -895,6 +897,20 @@ void PlayerFinishedLevel(int secret_flag)
 #endif
 	last_drawn_cockpit = -1;
 
+	if (Dedicated_server && (Game_mode & GM_MULTI) && !(Game_mode & GM_MULTI_COOP)
+	    && Current_level_num == Last_level)
+	{
+		// dedicated anarchy cycles the mission instead of ending the game
+		multi_endlevel_score();          // dedicated_endlevel_wait under the hood
+		if (Game_mode & GM_NETWORK)
+		{
+			int secret = 0;
+			multi_endlevel(&secret);     // NETSTAT_ENDLEVEL + endlevel packet
+		}
+		StartNewLevel(1);
+		return;
+	}
+
 	if (Current_level_num == Last_level) {
 #ifdef NETWORK
 		if ((Game_mode & GM_MULTI) && !(Game_mode & GM_MULTI_COOP))
@@ -907,7 +923,8 @@ void PlayerFinishedLevel(int secret_flag)
 #endif
 		{	// Note link to above else!
 			rval = AdvanceLevel(secret_flag);				//now go on to the next one (if one)
-			DoEndLevelScoreGlitz(0);		//give bonuses
+			if (!Dedicated_server)
+				DoEndLevelScoreGlitz(0);		//give bonuses
 		}
 	} else {
 #ifdef NETWORK
@@ -918,6 +935,9 @@ void PlayerFinishedLevel(int secret_flag)
 			DoEndLevelScoreGlitz(0);		//give bonuses
 		rval = AdvanceLevel(secret_flag);				//now go on to the next one (if one)
 	}
+
+	if (Dedicated_server)
+		return;
 
 	if (!was_multi && rval) {
 #ifndef SHAREWARE
@@ -973,6 +993,13 @@ int AdvanceLevel(int secret_flag)
 
 		if ((Newdemo_state == ND_STATE_RECORDING) || (Newdemo_state == ND_STATE_PAUSED))
 			newdemo_stop_recording(0);
+
+		if (Dedicated_server)
+		{
+			con_printf(CON_NORMAL, "[dedicated] mission complete, closing session\n");
+			Dedicated_exit_requested = 1;
+			return 1;
+		}
 
 		do_end_briefing_screens(Ending_text_filename);
 
