@@ -151,7 +151,6 @@ static int rate_limited(struct sockaddr_in *from)
 static int spawn_session(session *s, const unsigned char *blob, unsigned blob_len)
 {
 	FILE *f;
-	char port_buf[16];
 	char *argv[10];
 	int n = 0;
 
@@ -177,7 +176,6 @@ static int spawn_session(session *s, const unsigned char *blob, unsigned blob_le
 	fprintf(f, "timeout_empty=%d\n", Cfg_timeout_empty);
 	fclose(f);
 
-	snprintf(port_buf, sizeof(port_buf), "%u", (unsigned)s->port);
 	argv[n++] = (char *)Cfg_engine;
 	argv[n++] = "-dedicated";
 	argv[n++] = s->cfg_path;
@@ -186,7 +184,6 @@ static int spawn_session(session *s, const unsigned char *blob, unsigned blob_le
 	argv[n++] = "-nosound";
 	argv[n++] = "-notitles";
 	argv[n] = NULL;
-	(void)port_buf;
 
 	if (gs_spawn(&s->proc, argv) != 0)
 		return -1;

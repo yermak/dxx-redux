@@ -78,9 +78,9 @@ int dedicated_parse_cfg(const char *path)
 	return 1;
 }
 
-fix64 Ded_started_at; /* lifecycle timers build on this in Task 4 */
+static fix64 Ded_started_at;
 
-int dedicated_connected_players(void)
+static int dedicated_connected_players(void)
 {
 	int i, n = 0;
 	for (i = (Netgame.host_is_obs ? 1 : 0); i < N_players; i++)
@@ -128,7 +128,7 @@ static fix64 Ded_empty_since;   /* 0 = not currently empty */
 static int Ded_ever_had_player;
 
 /* called once per dedicated frame */
-int dedicated_should_exit(void)
+static int dedicated_should_exit(void)
 {
 	int players = dedicated_connected_players();
 	fix64 now = timer_query();

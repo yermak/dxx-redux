@@ -18,8 +18,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 COPY --from=build /src/d1/build/main/d1x-redux /usr/local/bin/d1x-redux
 COPY --from=build /src/d1/build/gameserver/d1x-gameserver /usr/local/bin/d1x-gameserver
 ENV GS_ENGINE=/usr/local/bin/d1x-redux \
-    GS_HOGDIR=/data \
-    GS_TMPDIR=/tmp
+    GS_HOGDIR=/data
 VOLUME /data
 EXPOSE 42424/udp 42425-42440/udp
 ENTRYPOINT ["/usr/local/bin/d1x-gameserver"]

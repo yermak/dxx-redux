@@ -21,8 +21,6 @@ extern dedicated_config Dedicated_cfg;
 
 int dedicated_parse_cfg(const char *path);
 void dedicated_main(void);           /* runs the session; never returns */
-int dedicated_should_exit(void);
-int dedicated_connected_players(void);
-void dedicated_endlevel_wait(void);  /* Task 4 */
+void dedicated_endlevel_wait(void);
 
 #endif

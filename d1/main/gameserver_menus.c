@@ -27,16 +27,15 @@ int GSP_awaiting; /* 0 none, 1 awaiting create ack, 2 awaiting list ack */
 
 static struct _sockaddr GSP_server_addr;
 static char GSP_portbuf[6];
-static char GSP_myportbuf[6];
 
 /* ---- transport helpers ---- */
 
 static int gsp_open_and_resolve(void)
 {
-	if ((atoi(GSP_myportbuf)) <= 1024 || (atoi(GSP_myportbuf)) > 65535)
-		snprintf(GSP_myportbuf, sizeof(GSP_myportbuf), "%d", UDP_PORT_DEFAULT);
+	int myport = (GameArg.MplUdpMyPort > 1024 && GameArg.MplUdpMyPort <= 65535)
+		? GameArg.MplUdpMyPort : UDP_PORT_DEFAULT;
 
-	if (udp_open_socket(0, atoi(GSP_myportbuf)) != 0)
+	if (udp_open_socket(0, myport) != 0)
 		return 0;
 	if (udp_dns_filladdr(GameCfg.GameserverAddr, atoi(GSP_portbuf), &GSP_server_addr) < 0)
 		return 0;
@@ -91,7 +90,6 @@ static int gsp_join_poll(newmenu *menu, d_event *event, direct_join *dj)
 static void gsp_join_session(unsigned short port)
 {
 	direct_join *dj;
-	char portbuf[6];
 	newmenu_item m[1];
 
 	MALLOC(dj, direct_join, 1);
@@ -100,8 +98,7 @@ static void gsp_join_session(unsigned short port)
 	memset(dj, 0, sizeof(*dj));
 
 	snprintf(dj->addrbuf, sizeof(dj->addrbuf), "%s", GameCfg.GameserverAddr);
-	snprintf(portbuf, sizeof(portbuf), "%u", (unsigned)port);
-	snprintf(dj->portbuf, sizeof(dj->portbuf), "%s", portbuf);
+	snprintf(dj->portbuf, sizeof(dj->portbuf), "%u", (unsigned)port);
 
 	if (udp_dns_filladdr(dj->addrbuf, atoi(dj->portbuf), &dj->host_addr) < 0) {
 		d_free(dj);
@@ -128,7 +125,6 @@ static void gsp_join_session(unsigned short port)
 typedef struct gsp_browse_state {
 	fix64 start_time;
 	fix64 last_send;
-	int done;
 } gsp_browse_state;
 
 static int gsp_browse_poll(newmenu *menu, d_event *event, gsp_browse_state *bs)
@@ -140,10 +136,8 @@ static int gsp_browse_poll(newmenu *menu, d_event *event, gsp_browse_state *bs)
 	timer_delay2(5);
 	net_udp_listen();
 
-	if (GSP_list_result.valid) {
-		bs->done = 1;
+	if (GSP_list_result.valid)
 		return -2;
-	}
 	if (timer_query() >= bs->start_time + F1_0 * 5) {
 		nm_messagebox(TXT_ERROR, 1, TXT_OK, "No response from game server at\n%s:%s", GameCfg.GameserverAddr, GSP_portbuf);
 		return -2;
@@ -177,7 +171,6 @@ static void gsp_browse(void)
 	GSP_awaiting = 2;
 	bs.start_time = timer_query();
 	bs.last_send = 0;
-	bs.done = 0;
 
 	m[0].type = NM_TYPE_TEXT; m[0].text = "Requesting game list...";
 	newmenu_do1(NULL, "GAME SERVER", 1, m,
@@ -335,12 +328,10 @@ static int gameserver_menu_handler(newmenu *menu, d_event *event, void *userdata
 		return 1;
 	}
 	if (citem == 5) {
-		int mission_result;
 		Gameserver_create_mode = 1;
 		/* mission select -> netgame params menu (same path as HOST GAME) */
-		mission_result = select_mission(1, TXT_MULTI_MISSION, net_udp_setup_game);
+		select_mission(1, TXT_MULTI_MISSION, net_udp_setup_game);
 		Gameserver_create_mode = 0;
-		(void)mission_result;
 		return 1;
 	}
 	return 0;
@@ -366,10 +357,6 @@ void do_gameserver_menu(void)
 	if (!GameCfg.GameserverAddr[0])
 		snprintf(GameCfg.GameserverAddr, sizeof(GameCfg.GameserverAddr), "eu.descent.one");
 	snprintf(GSP_portbuf, sizeof(GSP_portbuf), "%d", GameCfg.GameserverPort);
-	if (GameArg.MplUdpMyPort != 0)
-		snprintf(GSP_myportbuf, sizeof(GSP_myportbuf), "%d", GameArg.MplUdpMyPort);
-	else
-		snprintf(GSP_myportbuf, sizeof(GSP_myportbuf), "%d", UDP_PORT_DEFAULT);
 
 	m[nitems].type = NM_TYPE_TEXT;  m[nitems].text = "SERVER ADDRESS:"; nitems++;
 	m[nitems].type = NM_TYPE_INPUT; m[nitems].text = GameCfg.GameserverAddr; m[nitems].text_len = 127; nitems++;
