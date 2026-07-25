@@ -43,8 +43,8 @@
 #define MINIMAP_ZOOM		0x9000		// same baseline as the automap
 #define MINIMAP_AXIS_HYST	((F1_0*3)/4)	// north-up: re-pick the north axis when |dot(axis,up)| exceeds this
 
-static const int Minimap_hops[3] = { 4, 6, 9 };			//near, medium, far
-static const fix Minimap_cam_dist[3] = { 55*F1_0, 85*F1_0, 125*F1_0 };
+static const int Minimap_hops[3] = { 8, 12, 18 };		//near, medium, far
+static const fix Minimap_cam_dist[3] = { 110*F1_0, 170*F1_0, 250*F1_0 };	//2x radius: enemies show twice as far, geometry drawn half scale
 
 static map_edge_list Minimap_edges;
 static int Minimap_built = 0;
@@ -140,7 +140,7 @@ static void minimap_smooth_dir(vms_vector *cur, vms_vector *target)
 void draw_minimap(void)
 {
 	static grs_canvas minimap_canv;
-	static const int size_divisor[3] = { 6, 4, 3 };	//small, medium, large
+	static const int size_pct[3] = { 25, 50, 75 };	//small, medium, large: side as % of 3D window height
 	object *ship = &Objects[Players[Player_num].objnum];
 	int base_x = 0, base_w = Screen_3d_window.cv_bitmap.bm_w;
 	int base_h = Screen_3d_window.cv_bitmap.bm_h;
@@ -256,7 +256,12 @@ void draw_minimap(void)
 		base_w /= 3;
 		base_x = base_w;
 	}
-	side = base_h / size_divisor[size];
+	mgn = base_h / 64;
+	if (mgn < 2)
+		mgn = 2;
+	side = (base_h * size_pct[size]) / 100;
+	if (side > base_w - 2*mgn)
+		side = base_w - 2*mgn;	//surround: center monitor is narrower than it is tall
 	if (PlayerCfg.MirrorMode) {
 		// OGL_VIEWPORT (include/internal.h) caches on W/H only and
 		// ignores position - never exactly match the mirror's dims.
@@ -265,9 +270,6 @@ void draw_minimap(void)
 		if (side == base_w / mirror_divisor[msize] && side == base_h / mirror_divisor[msize])
 			side--;
 	}
-	mgn = base_h / 64;
-	if (mgn < 2)
-		mgn = 2;
 	switch (PlayerCfg.MinimapPos) {
 	case 0:		//top left
 		mx = mgn;			my = mgn;			break;
