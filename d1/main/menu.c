@@ -582,6 +582,11 @@ int do_option ( int select)
 #ifdef USE_UDP
 		case MENU_START_UDP_NETGAME:
 			multi_protocol = MULTI_PROTO_UDP;
+			// Gameserver_create_mode is sticky (see gameserver_menus.c): aborting
+			// a game longjmps out of the setup path, so the Game Server menu
+			// cannot reliably clear it itself. Clear it here, where a plain local
+			// HOST GAME starts.
+			Gameserver_create_mode = 0;
 			select_mission(1, TXT_MULTI_MISSION, net_udp_setup_game);
 			break;
 		case MENU_JOIN_MANUAL_UDP_NETGAME:

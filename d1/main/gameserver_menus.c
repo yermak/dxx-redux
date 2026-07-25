@@ -18,6 +18,7 @@
 #include "args.h"
 #include "game.h"
 #include "player.h"
+#include "console.h"
 
 int Gameserver_create_mode = 0;
 
@@ -58,7 +59,8 @@ static void gsp_send_create_req(ubyte *blob, int blob_len)
 	PUT_INTEL_SHORT(buf + 2, MULTI_PROTO_VERSION);
 	PUT_INTEL_SHORT(buf + 4, blob_len);
 	memcpy(buf + 6, blob, blob_len);
-	net_udp_gsp_sendto(buf, 6 + blob_len, &GSP_server_addr);
+	if (net_udp_gsp_sendto(buf, 6 + blob_len, &GSP_server_addr) < 0)
+		con_printf(CON_URGENT, "[gsp] create request could not be sent (socket down?)\n");
 }
 
 /* ---- join helper: hand a server session to the normal join flow ---- */
@@ -205,11 +207,16 @@ static void gsp_browse(void)
 
 typedef struct gsp_create_state {
 	fix64 start_time;
-	fix64 last_send;
 	ubyte blob[UPID_GAME_INFO_SIZE];
 	int blob_len;
 } gsp_create_state;
 
+/* GSP_CREATE_REQ is sent exactly once (see net_udp_gameserver_create): the
+ * broker only acks once the spawned session answers a poll, which takes a
+ * couple of seconds, and a resend in the meantime either trips its per-IP
+ * rate limiter (we would report "creating games too fast" for a session that
+ * did start) or spawns a duplicate session. Wait long enough to also catch the
+ * broker's own GS_READY_TIMEOUT (10s) verdict. */
 static int gsp_create_poll(newmenu *menu, d_event *event, gsp_create_state *cs)
 {
 	menu = menu;
@@ -221,13 +228,9 @@ static int gsp_create_poll(newmenu *menu, d_event *event, gsp_create_state *cs)
 
 	if (GSP_create_result.valid)
 		return -2;
-	if (timer_query() >= cs->start_time + F1_0 * 10) {
+	if (timer_query() >= cs->start_time + F1_0 * 15) {
 		nm_messagebox(TXT_ERROR, 1, TXT_OK, "No response from game server at\n%s:%s", GameCfg.GameserverAddr, GSP_portbuf);
 		return -2;
-	}
-	if (timer_query() >= cs->last_send + F1_0) {
-		gsp_send_create_req(cs->blob, cs->blob_len);
-		cs->last_send = timer_query();
 	}
 	return 0;
 }
@@ -242,6 +245,15 @@ int net_udp_gameserver_create(void)
 	ubyte saved_refuse;
 	ubyte saved_flags;
 
+	/* net_udp_setup_game() ran net_udp_init(), which closed the socket
+	 * gsp_open_and_resolve() opened for us before the mission select (and on
+	 * Windows tore down Winsock with it). Reopen it, or the request below goes
+	 * out on fd -1 and the wait always times out. */
+	if (!gsp_open_and_resolve()) {
+		nm_messagebox(TXT_ERROR, 1, TXT_OK, "Cannot resolve server address:\n%s", GameCfg.GameserverAddr);
+		return 0;
+	}
+
 	/* Server sessions are always open games. Force the flags only for the
 	 * wire blob, then restore them: write_netgame_profile persists Netgame
 	 * on setup-menu exit, and the pilot's saved HOST GAME defaults must not
@@ -253,15 +265,19 @@ int net_udp_gameserver_create(void)
 	Netgame.game_flags &= ~NETGAME_FLAG_CLOSED;
 
 	memset(&zero_addr, 0, sizeof(zero_addr));
-	net_udp_update_netgame();
+	/* No net_udp_update_netgame() here: outside a running game it overwrites
+	 * Netgame.levelnum with Current_level_num (0 before the first game), and
+	 * the dedicated child rejects level 0 as out of range. Everything it would
+	 * refresh (numplayers, game_status, kills) is reset by the child anyway;
+	 * the params menu already wrote what the session needs. */
 	cs.blob_len = net_udp_pack_game_info(cs.blob, UPID_GAME_INFO, &zero_addr, 0);
 	Netgame.RefusePlayers = saved_refuse;
 	Netgame.game_flags = saved_flags;
 	cs.start_time = timer_query();
-	cs.last_send = 0;
 
 	memset(&GSP_create_result, 0, sizeof(GSP_create_result));
 	GSP_awaiting = 1;
+	gsp_send_create_req(cs.blob, cs.blob_len);
 
 	m[0].type = NM_TYPE_TEXT; m[0].text = "Creating game on server...";
 	newmenu_do1(NULL, "GAME SERVER", 1, m,
@@ -328,10 +344,17 @@ static int gameserver_menu_handler(newmenu *menu, d_event *event, void *userdata
 		return 1;
 	}
 	if (citem == 5) {
+		/* Mission select -> netgame params menu (same path as HOST GAME).
+		 * select_mission() is NOT blocking when more than one mission is
+		 * installed: it creates a listbox window and returns immediately, so
+		 * net_udp_setup_game() runs later, from the listbox callback. Clearing
+		 * the flag here would clear it before the params menu is even built,
+		 * and START GAME would then host locally instead of on the server.
+		 * The flag stays set until the local HOST GAME path clears it
+		 * (menu.c MENU_START_UDP_NETGAME) - it cannot be cleared on the way
+		 * out of here either, since aborting the game longjmps past this frame. */
 		Gameserver_create_mode = 1;
-		/* mission select -> netgame params menu (same path as HOST GAME) */
 		select_mission(1, TXT_MULTI_MISSION, net_udp_setup_game);
-		Gameserver_create_mode = 0;
 		return 1;
 	}
 	return 0;
