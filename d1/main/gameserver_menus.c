@@ -343,6 +343,12 @@ static int gameserver_menu_handler(newmenu *menu, d_event *event, void *userdata
 	WriteConfigFile();
 
 	if (citem == 4 || citem == 5) { /* BROWSE / CREATE rows, see layout below */
+		/* This menu stays open across a whole game, and leaving that game runs
+		 * net_udp_close() -> WSACleanup(), after which socket() itself fails
+		 * ("udp_open_socket: socket creation failed"). net_udp_init() restarts
+		 * Winsock; it is the same call do_gameserver_menu makes on entry and is
+		 * safe here (no game running, Netgame is rebuilt by whatever follows). */
+		net_udp_init();
 		if (!gsp_open_and_resolve()) {
 			nm_messagebox(TXT_ERROR, 1, TXT_OK, "Cannot resolve server address:\n%s", GameCfg.GameserverAddr);
 			return 1;
