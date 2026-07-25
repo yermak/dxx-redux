@@ -206,7 +206,11 @@ static void handle_create(struct sockaddr_in *from, const unsigned char *data, i
 		return;
 	}
 	blob_len = get_u16(data + 4);
-	if (6 + (int)blob_len != len) {
+	/* A session must describe a real game. Without a blob the child would boot
+	 * a defaults session ("Dedicated", builtin mission, level 1) that nobody
+	 * asked for and that only clutters the browse list - players create their
+	 * own games. The defaults path stays for --test-create alone. */
+	if (6 + (int)blob_len != len || blob_len == 0) {
 		send_create_ack(from, GSP_ERR_BADREQ, 0);
 		return;
 	}
@@ -252,7 +256,10 @@ static void handle_list(struct sockaddr_in *from, const unsigned char *data, int
 		buf[n] = s->levelnum & 0xff; buf[n+1] = (s->levelnum >> 8) & 0xff;
 		buf[n+2] = (s->levelnum >> 16) & 0xff; buf[n+3] = (s->levelnum >> 24) & 0xff; n += 4;
 		buf[n++] = s->gamemode;
-		buf[n++] = s->numconnected;
+		/* Every session we spawn is hosted by a non-playing observer, which the
+		 * child counts as connected. Report players only, so an empty session
+		 * browses as 0/8 instead of looking like somebody is already in it. */
+		buf[n++] = s->numconnected ? s->numconnected - 1 : 0;
 		buf[n++] = s->max_numplayers;
 		buf[n++] = s->game_status;
 		count++;
