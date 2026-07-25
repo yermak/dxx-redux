@@ -8,7 +8,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 COPY . /src/d1
 WORKDIR /src/d1
 RUN cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release \
-        -DOPENGL=OFF -DOPENGLMERGE=OFF -DSDLMIXER=OFF -DPNG=OFF -DTRACKER=OFF \
+        -DOPENGL=OFF -DOPENGLMERGE=OFF -DSDLMIXER=OFF -DPNG=OFF -DTRACKER=ON \
     && cmake --build build -j
 
 FROM debian:bookworm-slim

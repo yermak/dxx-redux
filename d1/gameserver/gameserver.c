@@ -70,6 +70,8 @@ static const char *Cfg_hogdir = NULL;   /* required */
 static const char *Cfg_tmpdir = NULL;
 static int Cfg_timeout_empty_start = 300;
 static int Cfg_timeout_empty = 60;
+static int Cfg_tracker = 1;             /* let sessions show up in the in-game tracker list */
+static const char *Cfg_tracker_addr = NULL; /* NULL = the engine's own default tracker */
 static int Cfg_test_create = 0;
 
 static struct { unsigned long ip; time_t at; } Rate[GS_RATE_SLOTS];
@@ -174,6 +176,9 @@ static int spawn_session(session *s, const unsigned char *blob, unsigned blob_le
 		fprintf(f, "blob=%s\n", s->blob_path);
 	fprintf(f, "timeout_empty_start=%d\n", Cfg_timeout_empty_start);
 	fprintf(f, "timeout_empty=%d\n", Cfg_timeout_empty);
+	fprintf(f, "tracker=%d\n", Cfg_tracker ? 1 : 0);
+	if (Cfg_tracker_addr)  /* absent = child keeps the engine default */
+		fprintf(f, "tracker_addr=%s\n", Cfg_tracker_addr);
 	fclose(f);
 
 	argv[n++] = (char *)Cfg_engine;
@@ -349,6 +354,8 @@ int main(int argc, char **argv)
 	Cfg_hogdir = arg_or_env(argc, argv, "--hogdir", "GS_HOGDIR", NULL);
 	Cfg_timeout_empty_start = atoi(arg_or_env(argc, argv, "--timeout-empty-start", "GS_TIMEOUT_EMPTY_START", "300"));
 	Cfg_timeout_empty = atoi(arg_or_env(argc, argv, "--timeout-empty", "GS_TIMEOUT_EMPTY", "60"));
+	Cfg_tracker = atoi(arg_or_env(argc, argv, "--tracker", "GS_TRACKER", "1"));
+	Cfg_tracker_addr = arg_or_env(argc, argv, "--tracker-addr", "GS_TRACKER_ADDR", NULL);
 	Cfg_test_create = flag_present(argc, argv, "--test-create");
 #ifdef _WIN32
 	Cfg_tmpdir = arg_or_env(argc, argv, "--tmpdir", "TEMP", ".");
@@ -363,8 +370,9 @@ int main(int argc, char **argv)
 		        "usage: d1x-gameserver --engine <path-to-d1x-redux> --hogdir <data-dir>\n"
 		        "  [--port 42424] [--game-port-base 42425] [--max-sessions 8]\n"
 		        "  [--timeout-empty-start 300] [--timeout-empty 60] [--tmpdir <dir>] [--test-create]\n"
+		        "  [--tracker 0|1] [--tracker-addr <host[:port]>]\n"
 		        "  (env: GS_PORT, GS_GAME_PORT_BASE, GS_MAX_SESSIONS, GS_ENGINE, GS_HOGDIR,\n"
-		        "   GS_TIMEOUT_EMPTY_START, GS_TIMEOUT_EMPTY)\n");
+		        "   GS_TIMEOUT_EMPTY_START, GS_TIMEOUT_EMPTY, GS_TRACKER, GS_TRACKER_ADDR)\n");
 		return 2;
 	}
 
@@ -394,9 +402,10 @@ int main(int argc, char **argv)
 		return 1;
 	}
 
-	printf("[gs] d1x-gameserver listening on UDP %d; engine=%s hogdir=%s max-sessions=%d game-ports=%d..%d\n",
+	printf("[gs] d1x-gameserver listening on UDP %d; engine=%s hogdir=%s max-sessions=%d game-ports=%d..%d tracker=%d (%s)\n",
 	       Cfg_port, Cfg_engine, Cfg_hogdir, Cfg_max_sessions,
-	       Cfg_game_port_base, Cfg_game_port_base + Cfg_max_sessions - 1);
+	       Cfg_game_port_base, Cfg_game_port_base + Cfg_max_sessions - 1,
+	       Cfg_tracker ? 1 : 0, Cfg_tracker_addr ? Cfg_tracker_addr : "engine default");
 
 	if (Cfg_test_create) {
 		session *s = &Sessions[0];

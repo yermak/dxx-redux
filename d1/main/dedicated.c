@@ -44,6 +44,7 @@ int dedicated_parse_cfg(const char *path)
 	Dedicated_cfg.maxplayers = 8;
 	Dedicated_cfg.timeout_empty_start = 300;
 	Dedicated_cfg.timeout_empty = 60;
+	Dedicated_cfg.tracker = 1;
 
 	f = fopen(path, "r");
 	if (!f) {
@@ -72,9 +73,25 @@ int dedicated_parse_cfg(const char *path)
 		else if (!strcmp(key, "maxplayers")) Dedicated_cfg.maxplayers = atoi(val);
 		else if (!strcmp(key, "timeout_empty_start")) Dedicated_cfg.timeout_empty_start = atoi(val);
 		else if (!strcmp(key, "timeout_empty")) Dedicated_cfg.timeout_empty = atoi(val);
+		else if (!strcmp(key, "tracker")) Dedicated_cfg.tracker = atoi(val);
+		else if (!strcmp(key, "tracker_addr")) strncpy(Dedicated_cfg.tracker_addr, val, sizeof(Dedicated_cfg.tracker_addr) - 1);
 	}
 	fclose(f);
 	remove(path); /* single-use, written by the broker */
+
+	/* Feed tracker_addr into the same GameArg slots -tracker_hostaddr/-hostport
+	 * fill, so udp_tracker_init() (called from net_udp_init) resolves it. Must
+	 * happen here: by the time the netcode starts there is no other hook, and
+	 * an absent key must leave whatever argv/the compiled default said. */
+	if (Dedicated_cfg.tracker_addr[0]) {
+		char *colon = strchr(Dedicated_cfg.tracker_addr, ':');
+		if (colon) {
+			*colon = 0;
+			if (atoi(colon + 1) > 0)
+				GameArg.MplTrackerPort = atoi(colon + 1);
+		}
+		GameArg.MplTrackerAddr = Dedicated_cfg.tracker_addr;
+	}
 	return 1;
 }
 

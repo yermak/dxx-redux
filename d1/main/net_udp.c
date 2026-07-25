@@ -452,8 +452,11 @@ int udp_dns_filladdr( char *host, int port, struct _sockaddr *sAddr )
 	// Resolve the domain name
 	if( getaddrinfo( host, sPort, &hints, &result ) != 0 )
 	{
-		con_printf( CON_URGENT, "udp_dns_filladdr (getaddrinfo) failed\n" );
-		nm_messagebox( TXT_ERROR, 1, TXT_OK, "Could not resolve address" );
+		con_printf( CON_URGENT, "udp_dns_filladdr (getaddrinfo) failed for %s\n", host );
+		// headless: the con_printf above is the whole report -- a message box
+		// here would block a dedicated session forever (dead tracker hostname)
+		if (!Dedicated_server)
+			nm_messagebox( TXT_ERROR, 1, TXT_OK, "Could not resolve address" );
 		return -1;
 	}
 	
@@ -509,9 +512,14 @@ int udp_open_socket(int socknum, int port)
 
 	memset( &sAddr, '\0', sizeof( sAddr ) );
 
+	// Every failure below already said everything it knows via con_printf; the
+	// message boxes are the interactive dress. A headless session (tracker
+	// socket on a random port, game socket from the broker) must never sit in
+	// one waiting for a keypress, so skip them when Dedicated_server is set.
 	if ((UDP_Socket[socknum] = socket (_af, SOCK_DGRAM, 0)) < 0) {
 		con_printf(CON_URGENT,"udp_open_socket: socket creation failed (port %i)\n", port);
-		nm_messagebox(TXT_ERROR,1,TXT_OK,"Port: %i\nCould not create socket.", port);
+		if (!Dedicated_server)
+			nm_messagebox(TXT_ERROR,1,TXT_OK,"Port: %i\nCould not create socket.", port);
 		return -1;
 	}
 
@@ -531,7 +539,8 @@ int udp_open_socket(int socknum, int port)
 	if (bind (UDP_Socket[socknum], (struct sockaddr *) &sAddr, sizeof (struct sockaddr)) < 0) 
 	{      
 		con_printf(CON_URGENT,"udp_open_socket: bind name to socket failed (port %i)\n", port);
-		nm_messagebox(TXT_ERROR,1,TXT_OK,"Port: %i\nCould not bind name to socket.", port);
+		if (!Dedicated_server)
+			nm_messagebox(TXT_ERROR,1,TXT_OK,"Port: %i\nCould not bind name to socket.", port);
 		udp_close_socket(socknum);
 		return -1;
 	}
@@ -572,14 +581,16 @@ int udp_open_socket(int socknum, int port)
 			// ai_family is not identic
 			freeaddrinfo (res);
 			con_printf(CON_URGENT,"udp_open_socket: ai_family not identic (port %i)\n", port);
-			nm_messagebox(TXT_ERROR,1,TXT_OK,"Port: %i\nai_family_not identic.", port);
+			if (!Dedicated_server)
+				nm_messagebox(TXT_ERROR,1,TXT_OK,"Port: %i\nai_family_not identic.", port);
 			return -1;
 		}
 	
 		if ((UDP_Socket[socknum] = socket (sres->ai_family, SOCK_DGRAM, 0)) < 0)
 		{
 			con_printf(CON_URGENT,"udp_open_socket: socket creation failed (port %i)\n", port);
-			nm_messagebox(TXT_ERROR,1,TXT_OK,"Port: %i\nCould not create socket.", port);
+			if (!Dedicated_server)
+				nm_messagebox(TXT_ERROR,1,TXT_OK,"Port: %i\nCould not create socket.", port);
 			freeaddrinfo (res);
 			return -1;
 		}
@@ -587,7 +598,8 @@ int udp_open_socket(int socknum, int port)
 		if ((err = bind (UDP_Socket[socknum], sres->ai_addr, sres->ai_addrlen)) < 0)
 		{
 			con_printf(CON_URGENT,"udp_open_socket: bind name to socket failed (port %i)\n", port);
-			nm_messagebox(TXT_ERROR,1,TXT_OK,"Port: %i\nCould not bind name to socket.", port);
+			if (!Dedicated_server)
+				nm_messagebox(TXT_ERROR,1,TXT_OK,"Port: %i\nCould not bind name to socket.", port);
 			udp_close_socket(socknum);
 			freeaddrinfo (res);
 			return -1;
@@ -598,7 +610,8 @@ int udp_open_socket(int socknum, int port)
 	else {
 		UDP_Socket[socknum] = -1;
 		con_printf(CON_URGENT,"udp_open_socket (getaddrinfo):%s failed. port %i\n", gai_strerror (err), port);
-		nm_messagebox(TXT_ERROR,1,TXT_OK,"Port: %i\nCould not get address information:\n%s", port, gai_strerror (err));
+		if (!Dedicated_server)
+			nm_messagebox(TXT_ERROR,1,TXT_OK,"Port: %i\nCould not get address information:\n%s", port, gai_strerror (err));
 	}
 	setsockopt( UDP_Socket[socknum], SOL_SOCKET, SO_BROADCAST, &bcast, sizeof(bcast) );
 #endif
@@ -1701,6 +1714,15 @@ void net_udp_init()
 
 void net_udp_close()
 {
+#ifdef USE_TRACKER
+	// A dedicated session can exit without ever reaching net_udp_leave_game
+	// (that only runs when players were still connected), and its do_frame may
+	// have zeroed Netgame.Tracker after a failed verify. Key off what the broker
+	// asked for so a closing session never lingers in tracker lists.
+	if (Dedicated_server && Dedicated_cfg.tracker)
+		udp_tracker_unregister();
+#endif
+
 #ifdef _WIN32
 	WSACleanup();
 #endif
@@ -5370,11 +5392,13 @@ int net_udp_dedicated_start_game(void)
 		strncpy(Netgame.mission_name, Dedicated_cfg.mission, 8);
 	}
 
-	// dedicated sessions are always open and tracker-less
+	// dedicated sessions are always open; whether they are also advertised on
+	// the tracker is the broker's call (cfg key tracker=). Set in both branches:
+	// Tracker is not on the wire, so a blob session inherits nothing from it.
 	Netgame.RefusePlayers = 0;
 	Netgame.game_flags &= ~NETGAME_FLAG_CLOSED;
 #ifdef USE_TRACKER
-	Netgame.Tracker = 0;
+	Netgame.Tracker = Dedicated_cfg.tracker ? 1 : 0;
 #endif
 
 	if (!load_mission_by_name(Netgame.mission_name))
@@ -5415,6 +5439,18 @@ int net_udp_dedicated_start_game(void)
 	Netgame.players[0].protocol.udp.isyou = 1;
 	Network_status = NETSTAT_STARTING;
 	netgame_token = generate_token();
+
+#ifdef USE_TRACKER
+	// Same moment as the interactive host (net_udp_select_players:GetPlayersAgain):
+	// after UDP_MyPort and GameID are final, so the tracker advertises this
+	// session's own port instead of the default one.
+	if (Netgame.Tracker)
+	{
+		udp_tracker_register();
+		con_printf(CON_NORMAL, "[dedicated] registering with tracker %s:%d for game port %s\n",
+		           GameArg.MplTrackerAddr, GameArg.MplTrackerPort, UDP_MyPort);
+	}
+#endif
 
 	// select-players equivalent: register the host slot (net_udp.c:5028),
 	// then the unchecked-host observer path (net_udp.c:5145-5150)
@@ -5892,8 +5928,12 @@ void net_udp_do_frame(int force, int listen)
 			iLastQuery = 0;
 			iAttempts = 0;
 			
-			// Warn
-			nm_messagebox( TXT_WARNING, 1, TXT_OK, "No response from tracker!\nPossible causes:\nTracker is down\nYour port is likely not open!\n\nTracker: %s\nGame port: %s", GameArg.MplTrackerAddr, UDP_MyPort );
+			// Warn. A headless session has nobody to click OK, and losing the
+			// tracker must not cost it the players joining directly.
+			if (Dedicated_server)
+				con_printf( CON_URGENT, "[dedicated] no response from tracker %s for game port %s; session stays up, unlisted\n", GameArg.MplTrackerAddr, UDP_MyPort );
+			else
+				nm_messagebox( TXT_WARNING, 1, TXT_OK, "No response from tracker!\nPossible causes:\nTracker is down\nYour port is likely not open!\n\nTracker: %s\nGame port: %s", GameArg.MplTrackerAddr, UDP_MyPort );
 		}
 	}
 #endif

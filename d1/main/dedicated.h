@@ -15,6 +15,8 @@ typedef struct dedicated_config {
 	int maxplayers;
 	int timeout_empty_start;   /* s before exiting if nobody ever joined */
 	int timeout_empty;         /* s after the last player left */
+	int tracker;               /* 1 = also advertise the session on the tracker */
+	char tracker_addr[128];    /* "host[:port]"; "" = keep the engine default */
 } dedicated_config;
 
 extern dedicated_config Dedicated_cfg;
