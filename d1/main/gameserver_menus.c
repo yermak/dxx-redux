@@ -306,6 +306,16 @@ int net_udp_gameserver_create(void)
 	}
 }
 
+/* Mission-select callback for CREATE GAME. Setting the mode here - at the
+ * moment the setup menu actually opens - is what guarantees START GAME cannot
+ * quietly fall back to hosting on this PC: the flag can no longer be lost
+ * between picking CREATE GAME and pressing START. */
+static int gsp_create_setup(void)
+{
+	Gameserver_create_mode = 1;
+	return net_udp_setup_game();
+}
+
 /* ---- top-level menu ---- */
 
 static int gameserver_menu_handler(newmenu *menu, d_event *event, void *userdata)
@@ -344,17 +354,12 @@ static int gameserver_menu_handler(newmenu *menu, d_event *event, void *userdata
 		return 1;
 	}
 	if (citem == 5) {
-		/* Mission select -> netgame params menu (same path as HOST GAME).
-		 * select_mission() is NOT blocking when more than one mission is
-		 * installed: it creates a listbox window and returns immediately, so
-		 * net_udp_setup_game() runs later, from the listbox callback. Clearing
-		 * the flag here would clear it before the params menu is even built,
-		 * and START GAME would then host locally instead of on the server.
-		 * The flag stays set until the local HOST GAME path clears it
-		 * (menu.c MENU_START_UDP_NETGAME) - it cannot be cleared on the way
-		 * out of here either, since aborting the game longjmps past this frame. */
-		Gameserver_create_mode = 1;
-		select_mission(1, TXT_MULTI_MISSION, net_udp_setup_game);
+		/* Mission select -> netgame params menu (same path as HOST GAME), but
+		 * through gsp_create_setup so the mode is set as the setup menu opens,
+		 * not here: select_mission() is NOT blocking when more than one mission
+		 * is installed (it opens a listbox window and returns), so anything set
+		 * or cleared around this call happens at the wrong time. */
+		select_mission(1, TXT_MULTI_MISSION, gsp_create_setup);
 		return 1;
 	}
 	return 0;

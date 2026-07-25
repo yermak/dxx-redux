@@ -4587,7 +4587,11 @@ int net_udp_setup_game()
 	for (;;) {
 		optnum = 0;
 		opt.start_game=optnum;
-		m[optnum].type = NM_TYPE_MENU;  m[optnum].text = "Start Game"; optnum++;
+		// Say which machine will host, so a game server session can never be
+		// mistaken for a locally hosted one (and vice versa).
+		m[optnum].type = NM_TYPE_MENU;
+		m[optnum].text = Gameserver_create_mode ? "Start Game On Server" : "Start Game";
+		optnum++;
 
 		opt.load_preset=optnum;
 		m[optnum].type = NM_TYPE_MENU;  m[optnum].text = "Load Preset"; optnum++;
@@ -4669,7 +4673,7 @@ int net_udp_setup_game()
 
 		Assert(optnum <= SDL_arraysize(m));
 
-		choice = newmenu_do1( NULL, TXT_NETGAME_SETUP, optnum, m, (int (*)( newmenu *, d_event *, void * ))net_udp_game_param_handler, &opt, choice );
+		choice = newmenu_do1( NULL, Gameserver_create_mode ? "GAME SERVER SETUP" : TXT_NETGAME_SETUP, optnum, m, (int (*)( newmenu *, d_event *, void * ))net_udp_game_param_handler, &opt, choice );
 
 		if (choice != GAME_PARAM_CHOICE_SHOW_AGAIN)
 			break;
