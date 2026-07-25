@@ -5856,8 +5856,14 @@ void net_udp_do_frame(int force, int listen)
 	}
 
 #ifdef USE_TRACKER
-	// If we use the tracker, tell the tracker about us every 10 seconds
-	if( Netgame.Tracker )
+	// If we use the tracker, tell the tracker about us every 10 seconds.
+	// Host only: Netgame.Tracker is not part of the game info on the wire, so a
+	// joining player keeps whatever its own setup menu left there. On a game
+	// server session the host is the dedicated child (player 0, observer) and
+	// the creating client is an ordinary player - without this check it
+	// advertised its own closed port to the tracker and warned "no response
+	// from tracker" for a game it was not hosting.
+	if( Netgame.Tracker && multi_i_am_master() )
 	{
 		// Static variable... the last time we sent to the tracker
 		static fix64 iLastQuery = 0;
